@@ -63,6 +63,7 @@ export default function Generator() {
     { value: 'youtube', label: 'YouTube', icon: '▶️', tag: 'YouTube' },
     { value: 'tonie', label: 'Tonie', icon: null, logo: '/tonie-logo.svg', tag: 'Tonie' },
     { value: 'yoto', label: 'Yoto', icon: null, logo: '/yoto-logo.svg', tag: 'Yoto' },
+    { value: 'myo-studio', label: 'Archive MYO Studio', icon: null, logo: '/myo-studio-logo.svg', tag: 'MYO Studio' },
     { value: 'spotify', label: 'Spotify', icon: '🎵', tag: 'Spotify' },
     { value: 'podcast', label: 'Podcast', icon: '🎙️', tag: 'Podcast' },
   ];
