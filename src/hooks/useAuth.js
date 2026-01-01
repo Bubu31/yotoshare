@@ -76,12 +76,13 @@ export function useAuth() {
 
     // Construit l'URL d'autorisation
     const params = new URLSearchParams({
-      client_id: CONFIG.clientId,
-      redirect_uri: CONFIG.redirectUri,
+      audience: CONFIG.audience,
+      scope: 'offline_access',
       response_type: 'code',
-      scope: 'openid profile offline_access',
+      client_id: CONFIG.clientId,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
+      redirect_uri: CONFIG.redirectUri,
       state: state,
     });
 

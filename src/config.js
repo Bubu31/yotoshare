@@ -6,8 +6,9 @@ export const CONFIG = {
   
   // API Yoto
   apiUrl: import.meta.env.VITE_YOTO_API_URL || 'https://api.yotoplay.com',
-  authUrl: 'https://api.yotoplay.com/oauth/authorize',
-  tokenUrl: 'https://api.yotoplay.com/oauth/token',
+  authUrl: 'https://login.yotoplay.com/authorize',
+  tokenUrl: 'https://login.yotoplay.com/oauth/token',
+  audience: 'https://api.yotoplay.com',
   
   // App
   appName: 'YotoShare',
