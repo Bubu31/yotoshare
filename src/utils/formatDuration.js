@@ -47,43 +47,66 @@ export function formatTrackDuration(seconds) {
  * @returns {number} Durée totale en secondes
  */
 export function calculateTotalDuration(playlist) {
+  // Essaie d'abord la durée totale depuis les métadonnées
+  if (playlist?.metadata?.media?.duration) {
+    return playlist.metadata.media.duration;
+  }
+
   if (!playlist?.content?.chapters) return 0;
-  
+
   let total = 0;
-  
+
   for (const chapter of playlist.content.chapters) {
-    if (chapter.tracks) {
+    // Utilise la durée du chapter si disponible
+    if (chapter.duration) {
+      total += chapter.duration;
+    } else if (chapter.tracks) {
+      // Sinon, somme les durées des tracks
       for (const track of chapter.tracks) {
         total += track.duration || 0;
       }
     }
   }
-  
+
   return total;
 }
 
 /**
  * Extrait toutes les pistes d'une playlist
- * @param {object} playlist 
+ * Les tracks n'ont pas de titre dans l'API Yoto, on utilise le titre du chapter
+ * ou on génère un nom "Piste X"
+ * @param {object} playlist
  * @returns {Array} Liste des pistes avec leurs titres
  */
 export function extractAllTracks(playlist) {
   if (!playlist?.content?.chapters) return [];
-  
+
   const tracks = [];
-  
+  let globalTrackIndex = 1;
+
   for (const chapter of playlist.content.chapters) {
-    if (chapter.tracks) {
+    // Si le chapter a des tracks, on les ajoute
+    if (chapter.tracks && chapter.tracks.length > 0) {
       for (const track of chapter.tracks) {
         tracks.push({
-          title: track.title,
-          duration: track.duration,
+          // Utilise le titre du chapter s'il n'y a qu'une track, sinon génère un nom
+          title: chapter.title || `Piste ${globalTrackIndex}`,
+          duration: track.duration || chapter.duration || 0,
           chapterTitle: chapter.title,
         });
+        globalTrackIndex++;
       }
+    } else if (chapter.title) {
+      // Si pas de tracks mais un chapter avec titre (et potentiellement une durée)
+      tracks.push({
+        title: chapter.title,
+        duration: chapter.duration || 0,
+        chapterTitle: chapter.title,
+      });
+      globalTrackIndex++;
     }
   }
-  
+
   return tracks;
 }
 

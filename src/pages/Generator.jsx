@@ -13,25 +13,27 @@ export default function Generator() {
   const cardRef = useRef(null);
   
   const { getValidToken } = useAuth();
-  const [playlist, setPlaylist] = useState(location.state?.playlist || null);
-  const [isLoading, setIsLoading] = useState(!playlist);
+  // Utilise les données du Dashboard pour l'affichage initial (titre, cover)
+  const initialData = location.state?.playlist || null;
+  const [playlist, setPlaylist] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [accentColor, setAccentColor] = useState(COLOR_PRESETS[0].color);
   const [error, setError] = useState(null);
 
   const selectedPreset = COLOR_PRESETS.find(p => p.color === accentColor) || COLOR_PRESETS[0];
 
+  // Toujours fetch les détails complets pour avoir les chapters/tracks
   useEffect(() => {
     let isMounted = true;
 
     const fetchPlaylist = async () => {
-      if (playlist) return;
-
       try {
         setIsLoading(true);
         const token = await getValidToken();
         if (!isMounted) return;
         const data = await yotoAPI.getPlaylistDetails(token, cardId);
+        console.log('Playlist details:', data);
         if (!isMounted) return;
         setPlaylist(data);
       } catch (err) {
@@ -51,7 +53,7 @@ export default function Generator() {
     return () => {
       isMounted = false;
     };
-  }, [cardId]); // Removed getValidToken and playlist from dependencies
+  }, [cardId]);
 
   const handleExport = async () => {
     if (!cardRef.current) return;
