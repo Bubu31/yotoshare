@@ -124,14 +124,20 @@ export default function Generator() {
       setSaveSuccess(false);
       const token = await getValidToken();
 
-      const metadata = {
-        category,
-        genre: genre.split(',').map(g => g.trim()).filter(Boolean),
-        languages,
-        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      // Envoie la playlist complète avec les métadonnées mises à jour
+      const updatedPlaylist = {
+        title: playlist.title,
+        content: playlist.content,
+        metadata: {
+          ...playlist.metadata,
+          category,
+          genre: genre.split(',').map(g => g.trim()).filter(Boolean),
+          languages,
+          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        },
       };
 
-      await yotoAPI.updateContent(token, cardId, { metadata });
+      await yotoAPI.updateContent(token, cardId, updatedPlaylist);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
