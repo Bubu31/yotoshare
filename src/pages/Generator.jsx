@@ -724,6 +724,18 @@ const CardPreview = forwardRef(function CardPreview(
         }}
       />
 
+      {/* Badge Archive MYO Studio */}
+      <div
+        className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full"
+        style={{
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(10px)',
+        }}
+      >
+        <img src="/myo-studio-badge.avif" alt="MYO Studio" className="w-6 h-6 rounded-full" />
+        <span className="text-white text-sm font-semibold">Archive MYO Studio</span>
+      </div>
+
       {/* Contenu */}
       <div className="relative h-full flex p-10 gap-8">
         {/* Colonne gauche */}
