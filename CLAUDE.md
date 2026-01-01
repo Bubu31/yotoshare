@@ -151,7 +151,10 @@ yotoshare/
 │       └── formatDuration.js # Helpers format durée
 │
 ├── public/
-│   └── logo.svg              # Logo YotoShare
+│   ├── logo.svg              # Logo YotoShare
+│   ├── tonie-logo.svg        # Logo source Tonie
+│   ├── yoto-logo.svg         # Logo source Yoto
+│   └── myo-studio-badge.svg  # Badge Archive MYO Studio
 │
 ├── index.html
 ├── vite.config.js
@@ -291,7 +294,52 @@ Vérifier que l'URL exacte `https://yoto.busolin.fr/callback` est bien dans les 
 
 ---
 
+## 🚀 Déploiement
+
+### Pipeline CI/CD
+1. Push sur `master` → GitHub Action build l'image Docker
+2. Image poussée sur `ghcr.io/bubu31/yotoshare:latest`
+3. Déployer via Komodo : `mcp__komodo__deploy_stack` avec `stack_name: "yotoshare"`
+
+### Vérifier le statut
+```bash
+gh run list --limit 1  # Vérifier GitHub Action
+```
+
+---
+
+## 🏷️ Système de tags spéciaux
+
+### Tags `ys:` (YotoShare)
+Les tags préfixés par `ys:` sont des tags système, filtrés de l'affichage mais utilisés par l'application :
+
+- **`ys:color:#XXXXXX`** : Sauvegarde la couleur d'accent sélectionnée
+  - Sauvegardé automatiquement avec les métadonnées
+  - Restauré au chargement de la playlist
+  - Ne s'affiche pas sur le visuel
+
+### Sources auto-détectées
+Les tags correspondant aux sources (YouTube, Tonie, Yoto, Spotify, Podcast) sont automatiquement détectés au chargement et pré-sélectionnés dans l'interface.
+
+---
+
+## 🎨 Assets visuels
+
+### Logos sources (public/)
+- `tonie-logo.svg` - Logo Toniebox (turquoise)
+- `yoto-logo.svg` - Logo Yoto (orange)
+
+### Badge Archive MYO Studio
+- `myo-studio-badge.svg` - Logo cercle orange avec note de musique
+- Affiché en haut à droite de tous les visuels exportés
+- Position : `top-5 right-5`, taille icône : `w-10 h-10`
+
+---
+
 ## 📝 Historique
 
 - **v1.0** - Version initiale avec OAuth + génération de cartes
+- **v1.1** - Ajout sauvegarde couleur dans tags `ys:color:`
+- **v1.2** - Logos Tonie/Yoto pour les sources
+- **v1.3** - Badge "Archive MYO Studio" en haut à droite
 - Créé avec l'aide de Claude (Anthropic)
