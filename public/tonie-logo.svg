@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Toniebox stylisé - boîte avec oreilles rondes -->
+  <rect x="15" y="30" width="70" height="55" rx="8" fill="#1DBFCB"/>
+  <circle cx="25" cy="30" r="12" fill="#1DBFCB"/>
+  <circle cx="75" cy="30" r="12" fill="#1DBFCB"/>
+  <rect x="25" y="50" width="50" height="25" rx="4" fill="#fff" opacity="0.3"/>
+</svg>

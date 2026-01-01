@@ -61,8 +61,8 @@ export default function Generator() {
 
   const SOURCES = [
     { value: 'youtube', label: 'YouTube', icon: '▶️', tag: 'YouTube' },
-    { value: 'tonie', label: 'Tonie', icon: '🎧', tag: 'Tonie' },
-    { value: 'yoto', label: 'Yoto', icon: '🟠', tag: 'Yoto' },
+    { value: 'tonie', label: 'Tonie', icon: null, logo: '/tonie-logo.svg', tag: 'Tonie' },
+    { value: 'yoto', label: 'Yoto', icon: null, logo: '/yoto-logo.svg', tag: 'Yoto' },
     { value: 'spotify', label: 'Spotify', icon: '🎵', tag: 'Spotify' },
     { value: 'podcast', label: 'Podcast', icon: '🎙️', tag: 'Podcast' },
   ];
@@ -553,13 +553,17 @@ export default function Generator() {
                       key={source.value}
                       type="button"
                       onClick={() => toggleSource(source.value)}
-                      className={`px-3 py-1 rounded-full text-sm transition-all flex items-center gap-1 ${
+                      className={`px-3 py-1 rounded-full text-sm transition-all flex items-center gap-1.5 ${
                         sources.includes(source.value)
                           ? 'bg-orange-500 text-white'
                           : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                       }`}
                     >
-                      <span>{source.icon}</span>
+                      {source.logo ? (
+                        <img src={source.logo} alt={source.label} className="w-4 h-4" />
+                      ) : (
+                        <span>{source.icon}</span>
+                      )}
                       <span>{source.label}</span>
                     </button>
                   ))}
@@ -769,14 +773,20 @@ const CardPreview = forwardRef(function CardPreview(
                       <span>{languageData.map(l => l.label).join(', ')}</span>
                     </span>
                   )}
-                  {sourceData.length > 0 && (
+                  {sourceData.length > 0 && sourceData.map((source, i) => (
                     <span
-                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
+                      key={i}
+                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1.5"
                       style={{ background: 'rgba(255,255,255,0.2)' }}
                     >
-                      📀 {sourceData.map(s => s.label).join(', ')}
+                      {source.logo ? (
+                        <img src={source.logo} alt={source.label} className="h-4 w-4" />
+                      ) : (
+                        <span>{source.icon}</span>
+                      )}
+                      <span>{source.label}</span>
                     </span>
-                  )}
+                  ))}
                 </div>
               )}
               {/* Genre et Tags */}
