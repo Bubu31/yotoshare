@@ -45,15 +45,18 @@ export default function Generator() {
   ];
 
   const LANGUAGES = [
-    { value: 'fr', label: 'Français', code: 'FR' },
-    { value: 'fr-fr', label: 'Français (France)', code: 'FR' },
-    { value: 'en', label: 'Anglais', code: 'EN' },
-    { value: 'en-gb', label: 'Anglais (UK)', code: 'GB' },
-    { value: 'en-us', label: 'Anglais (US)', code: 'US' },
-    { value: 'de', label: 'Allemand', code: 'DE' },
-    { value: 'es', label: 'Espagnol', code: 'ES' },
-    { value: 'it', label: 'Italien', code: 'IT' },
+    { value: 'fr', label: 'Français', flag: 'fr' },
+    { value: 'fr-fr', label: 'Français (France)', flag: 'fr' },
+    { value: 'en', label: 'Anglais', flag: 'gb' },
+    { value: 'en-gb', label: 'Anglais (UK)', flag: 'gb' },
+    { value: 'en-us', label: 'Anglais (US)', flag: 'us' },
+    { value: 'de', label: 'Allemand', flag: 'de' },
+    { value: 'es', label: 'Espagnol', flag: 'es' },
+    { value: 'it', label: 'Italien', flag: 'it' },
   ];
+
+  // URL des drapeaux (flagcdn.com)
+  const getFlagUrl = (code) => `https://flagcdn.com/24x18/${code}.png`;
 
   const SOURCES = [
     { value: 'youtube', label: 'YouTube', icon: '▶️', tag: 'YouTube' },
@@ -720,10 +723,19 @@ const CardPreview = forwardRef(function CardPreview(
                   )}
                   {languageData.length > 0 && (
                     <span
-                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1.5"
                       style={{ background: 'rgba(255,255,255,0.2)' }}
                     >
-                      {languageData.map(l => l.code).join('/')} {languageData.map(l => l.label).join(', ')}
+                      {languageData.map((l, i) => (
+                        <img
+                          key={i}
+                          src={`https://flagcdn.com/24x18/${l.flag}.png`}
+                          alt={l.label}
+                          className="h-3 inline-block"
+                          style={{ verticalAlign: 'middle' }}
+                        />
+                      ))}
+                      <span>{languageData.map(l => l.label).join(', ')}</span>
                     </span>
                   )}
                   {sourceData.length > 0 && (
