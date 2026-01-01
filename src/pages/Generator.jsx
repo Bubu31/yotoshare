@@ -257,12 +257,12 @@ const CardPreview = forwardRef(function CardPreview(
       />
 
       {/* Contenu */}
-      <div className="relative h-full flex p-10 gap-10">
+      <div className="relative h-full flex p-10 gap-8">
         {/* Colonne gauche */}
-        <div className="flex flex-col items-center w-64">
+        <div className="flex flex-col items-center w-80">
           {/* Cover - format portrait 2:3 comme les cartes Yoto */}
           <div
-            className="w-52 rounded-3xl overflow-hidden bg-black flex items-center justify-center"
+            className="w-64 rounded-3xl overflow-hidden bg-black flex items-center justify-center"
             style={{
               aspectRatio: '2/3',
               boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 6px rgba(255,255,255,0.2)',
