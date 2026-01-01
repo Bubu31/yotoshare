@@ -386,6 +386,12 @@ export default function Generator() {
                 coverUrl={coverUrl}
                 accentColor={accentColor}
                 selectedPreset={selectedPreset}
+                category={category}
+                genre={genre}
+                languages={languages}
+                tags={tags}
+                CATEGORIES={CATEGORIES}
+                LANGUAGES={LANGUAGES}
               />
             </div>
           </div>
@@ -399,9 +405,18 @@ export default function Generator() {
 import { forwardRef } from 'react';
 
 const CardPreview = forwardRef(function CardPreview(
-  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset },
+  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, tags, CATEGORIES, LANGUAGES },
   ref
 ) {
+  // Prépare les métadonnées à afficher
+  const categoryLabel = category && category !== 'none'
+    ? CATEGORIES.find(c => c.value === category)?.label
+    : null;
+  const genreArray = genre ? genre.split(',').map(g => g.trim()).filter(Boolean) : [];
+  const languageLabels = languages.length > 0
+    ? languages.map(l => LANGUAGES.find(lang => lang.value === l)?.label).filter(Boolean)
+    : [];
+  const tagsArray = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [];
   return (
     <div
       ref={ref}
@@ -478,9 +493,9 @@ const CardPreview = forwardRef(function CardPreview(
           </h1>
 
           {/* Meta tags */}
-          <div className="flex gap-4 mb-6">
+          <div className="flex flex-wrap gap-2 mb-4">
             <div
-              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
+              className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(10px)',
@@ -490,7 +505,7 @@ const CardPreview = forwardRef(function CardPreview(
               <span>{tracks.length} pistes</span>
             </div>
             <div
-              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
+              className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(10px)',
@@ -499,7 +514,55 @@ const CardPreview = forwardRef(function CardPreview(
               <span>⏱️</span>
               <span>{formatDuration(totalDuration)}</span>
             </div>
+            {categoryLabel && (
+              <div
+                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                <span>📁</span>
+                <span>{categoryLabel}</span>
+              </div>
+            )}
+            {languageLabels.length > 0 && (
+              <div
+                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                <span>🌍</span>
+                <span>{languageLabels.join(', ')}</span>
+              </div>
+            )}
           </div>
+
+          {/* Genre et Tags */}
+          {(genreArray.length > 0 || tagsArray.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {genreArray.map((g, i) => (
+                <span
+                  key={`genre-${i}`}
+                  className="px-3 py-1 rounded-full text-white text-xs font-medium"
+                  style={{ background: accentColor }}
+                >
+                  {g}
+                </span>
+              ))}
+              {tagsArray.map((t, i) => (
+                <span
+                  key={`tag-${i}`}
+                  className="px-3 py-1 rounded-full text-white text-xs font-medium"
+                  style={{ background: 'rgba(255,255,255,0.25)' }}
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Liste des pistes */}
           <div
