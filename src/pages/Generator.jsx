@@ -18,8 +18,38 @@ export default function Generator() {
   const [playlist, setPlaylist] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [accentColor, setAccentColor] = useState(COLOR_PRESETS[0].color);
   const [error, setError] = useState(null);
+
+  // État des métadonnées
+  const [category, setCategory] = useState('none');
+  const [genre, setGenre] = useState('');
+  const [languages, setLanguages] = useState([]);
+  const [tags, setTags] = useState('');
+
+  const CATEGORIES = [
+    { value: 'none', label: 'Aucune' },
+    { value: 'stories', label: 'Histoires' },
+    { value: 'music', label: 'Musique' },
+    { value: 'radio', label: 'Radio' },
+    { value: 'podcast', label: 'Podcast' },
+    { value: 'sfx', label: 'Effets sonores' },
+    { value: 'activities', label: 'Activités' },
+    { value: 'alarms', label: 'Alarmes' },
+  ];
+
+  const LANGUAGES = [
+    { value: 'fr', label: 'Français' },
+    { value: 'fr-fr', label: 'Français (France)' },
+    { value: 'en', label: 'Anglais' },
+    { value: 'en-gb', label: 'Anglais (UK)' },
+    { value: 'en-us', label: 'Anglais (US)' },
+    { value: 'de', label: 'Allemand' },
+    { value: 'es', label: 'Espagnol' },
+    { value: 'it', label: 'Italien' },
+  ];
 
   const selectedPreset = COLOR_PRESETS.find(p => p.color === accentColor) || COLOR_PRESETS[0];
 
@@ -36,6 +66,13 @@ export default function Generator() {
         console.log('Playlist details:', data);
         if (!isMounted) return;
         setPlaylist(data);
+        // Initialise les métadonnées depuis la playlist
+        if (data.metadata) {
+          setCategory(data.metadata.category || 'none');
+          setGenre(Array.isArray(data.metadata.genre) ? data.metadata.genre.join(', ') : '');
+          setLanguages(Array.isArray(data.metadata.languages) ? data.metadata.languages : []);
+          setTags(Array.isArray(data.metadata.tags) ? data.metadata.tags.join(', ') : '');
+        }
       } catch (err) {
         console.error('Erreur chargement playlist:', err);
         if (isMounted) {
@@ -79,6 +116,38 @@ export default function Generator() {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleSaveMetadata = async () => {
+    try {
+      setIsSaving(true);
+      setSaveSuccess(false);
+      const token = await getValidToken();
+
+      const metadata = {
+        category,
+        genre: genre.split(',').map(g => g.trim()).filter(Boolean),
+        languages,
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      };
+
+      await yotoAPI.updateContent(token, cardId, { metadata });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Erreur sauvegarde:', err);
+      alert('Erreur lors de la sauvegarde des métadonnées');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleLanguage = (lang) => {
+    setLanguages(prev =>
+      prev.includes(lang)
+        ? prev.filter(l => l !== lang)
+        : [...prev, lang]
+    );
   };
 
   if (isLoading) {
@@ -196,6 +265,107 @@ export default function Generator() {
                   💡 Le visuel est optimisé pour Facebook (940×788px)
                 </p>
               </div>
+            </div>
+
+            {/* Métadonnées */}
+            <div className="bg-slate-800/50 rounded-2xl p-6 mt-6">
+              <h2 className="text-white font-semibold text-lg mb-6 flex items-center gap-2">
+                <span>📝</span> Métadonnées
+              </h2>
+
+              {/* Catégorie */}
+              <div className="mb-4">
+                <label className="block text-slate-400 text-sm mb-2">Catégorie</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-orange-500"
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Genre */}
+              <div className="mb-4">
+                <label className="block text-slate-400 text-sm mb-2">Genre (séparés par virgule)</label>
+                <input
+                  type="text"
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  placeholder="Aventure, Fantaisie..."
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              {/* Langues */}
+              <div className="mb-4">
+                <label className="block text-slate-400 text-sm mb-2">Langues</label>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map(lang => (
+                    <button
+                      key={lang.value}
+                      type="button"
+                      onClick={() => toggleLanguage(lang.value)}
+                      className={`px-3 py-1 rounded-full text-sm transition-all ${
+                        languages.includes(lang.value)
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div className="mb-6">
+                <label className="block text-slate-400 text-sm mb-2">Tags (séparés par virgule)</label>
+                <input
+                  type="text"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="histoire, enfants, audio..."
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              {/* Bouton sauvegarder */}
+              <button
+                onClick={handleSaveMetadata}
+                disabled={isSaving}
+                className={`w-full py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                  saveSuccess
+                    ? 'bg-green-500 text-white'
+                    : 'bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50'
+                }`}
+              >
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span>Sauvegarde...</span>
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Sauvegardé !</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    <span>Sauvegarder</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 

@@ -92,6 +92,27 @@ class YotoAPI {
   }
 
   /**
+   * Met à jour les métadonnées d'une playlist
+   */
+  async updateContent(accessToken, cardId, updates) {
+    const response = await fetch(`${this.baseUrl}/content`, {
+      method: 'POST',
+      headers: this.getHeaders(accessToken),
+      body: JSON.stringify({
+        cardId,
+        ...updates,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Erreur mise à jour: ${error}`);
+    }
+
+    return response.json();
+  }
+
+  /**
    * Rafraîchit l'access token
    */
   async refreshToken(refreshToken) {
