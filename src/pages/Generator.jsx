@@ -120,6 +120,9 @@ export default function Generator() {
         if (palette.DarkMuted) {
           colors.darkMuted = palette.DarkMuted.hex;
         }
+        if (palette.LightMuted) {
+          colors.lightMuted = palette.LightMuted.hex;
+        }
 
         setExtractedColors(colors);
         // Sélectionne automatiquement la couleur Vibrant si disponible
@@ -281,51 +284,81 @@ export default function Generator() {
               </h2>
 
               {/* Couleurs extraites de la cover */}
-              {extractedColors && (
+              {extractedColors && Object.keys(extractedColors).length > 0 && (
                 <div className="mb-6">
                   <label className="block text-slate-400 text-sm mb-3">Couleurs de la cover</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-6 gap-2">
                     {extractedColors.vibrant && (
                       <button
                         onClick={() => setAccentColor(extractedColors.vibrant)}
-                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
+                        className={`aspect-square rounded-lg transition-all ${
                           accentColor === extractedColors.vibrant
-                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
-                            : 'hover:scale-105'
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
                         }`}
                         style={{ background: extractedColors.vibrant }}
                         title="Vibrant"
-                      >
-                        <span className="text-white text-xs font-medium drop-shadow">Vibrant</span>
-                      </button>
+                      />
                     )}
-                    {extractedColors.muted && (
+                    {extractedColors.lightVibrant && (
                       <button
-                        onClick={() => setAccentColor(extractedColors.muted)}
-                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
-                          accentColor === extractedColors.muted
-                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
-                            : 'hover:scale-105'
+                        onClick={() => setAccentColor(extractedColors.lightVibrant)}
+                        className={`aspect-square rounded-lg transition-all ${
+                          accentColor === extractedColors.lightVibrant
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
                         }`}
-                        style={{ background: extractedColors.muted }}
-                        title="Muted"
-                      >
-                        <span className="text-white text-xs font-medium drop-shadow">Muted</span>
-                      </button>
+                        style={{ background: extractedColors.lightVibrant }}
+                        title="Light Vibrant"
+                      />
                     )}
                     {extractedColors.darkVibrant && (
                       <button
                         onClick={() => setAccentColor(extractedColors.darkVibrant)}
-                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
+                        className={`aspect-square rounded-lg transition-all ${
                           accentColor === extractedColors.darkVibrant
-                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
-                            : 'hover:scale-105'
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
                         }`}
                         style={{ background: extractedColors.darkVibrant }}
                         title="Dark Vibrant"
-                      >
-                        <span className="text-white text-xs font-medium drop-shadow">Dark</span>
-                      </button>
+                      />
+                    )}
+                    {extractedColors.muted && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.muted)}
+                        className={`aspect-square rounded-lg transition-all ${
+                          accentColor === extractedColors.muted
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
+                        }`}
+                        style={{ background: extractedColors.muted }}
+                        title="Muted"
+                      />
+                    )}
+                    {extractedColors.lightMuted && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.lightMuted)}
+                        className={`aspect-square rounded-lg transition-all ${
+                          accentColor === extractedColors.lightMuted
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
+                        }`}
+                        style={{ background: extractedColors.lightMuted }}
+                        title="Light Muted"
+                      />
+                    )}
+                    {extractedColors.darkMuted && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.darkMuted)}
+                        className={`aspect-square rounded-lg transition-all ${
+                          accentColor === extractedColors.darkMuted
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                            : 'hover:scale-110'
+                        }`}
+                        style={{ background: extractedColors.darkMuted }}
+                        title="Dark Muted"
+                      />
                     )}
                   </div>
                 </div>
