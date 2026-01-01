@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { toPng } from 'html-to-image';
+import { Vibrant } from 'node-vibrant/browser';
 import useAuth from '../hooks/useAuth';
 import { yotoAPI } from '../utils/api';
 import { CONFIG, COLOR_PRESETS } from '../config';
@@ -21,6 +22,8 @@ export default function Generator() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [accentColor, setAccentColor] = useState(COLOR_PRESETS[0].color);
+  const [customColor, setCustomColor] = useState('#F95E3F');
+  const [extractedColors, setExtractedColors] = useState(null);
   const [error, setError] = useState(null);
 
   // État des métadonnées
@@ -91,6 +94,47 @@ export default function Generator() {
       isMounted = false;
     };
   }, [cardId]);
+
+  // Extraire les couleurs de la cover
+  useEffect(() => {
+    const extractColors = async () => {
+      const coverUrl = playlist?.metadata?.cover?.imageL || playlist?.metadata?.cover?.imageM;
+      if (!coverUrl) return;
+
+      try {
+        const palette = await Vibrant.from(coverUrl).getPalette();
+        const colors = {};
+
+        if (palette.Vibrant) {
+          colors.vibrant = palette.Vibrant.hex;
+        }
+        if (palette.Muted) {
+          colors.muted = palette.Muted.hex;
+        }
+        if (palette.DarkVibrant) {
+          colors.darkVibrant = palette.DarkVibrant.hex;
+        }
+        if (palette.LightVibrant) {
+          colors.lightVibrant = palette.LightVibrant.hex;
+        }
+        if (palette.DarkMuted) {
+          colors.darkMuted = palette.DarkMuted.hex;
+        }
+
+        setExtractedColors(colors);
+        // Sélectionne automatiquement la couleur Vibrant si disponible
+        if (colors.vibrant) {
+          setAccentColor(colors.vibrant);
+        }
+      } catch (err) {
+        console.error('Erreur extraction couleurs:', err);
+      }
+    };
+
+    if (playlist) {
+      extractColors();
+    }
+  }, [playlist]);
 
   const handleExport = async () => {
     if (!cardRef.current) return;
@@ -236,20 +280,98 @@ export default function Generator() {
                 <span>🎨</span> Personnalisation
               </h2>
 
-              {/* Sélecteur de couleur */}
+              {/* Couleurs extraites de la cover */}
+              {extractedColors && (
+                <div className="mb-6">
+                  <label className="block text-slate-400 text-sm mb-3">Couleurs de la cover</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {extractedColors.vibrant && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.vibrant)}
+                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
+                          accentColor === extractedColors.vibrant
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ background: extractedColors.vibrant }}
+                        title="Vibrant"
+                      >
+                        <span className="text-white text-xs font-medium drop-shadow">Vibrant</span>
+                      </button>
+                    )}
+                    {extractedColors.muted && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.muted)}
+                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
+                          accentColor === extractedColors.muted
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ background: extractedColors.muted }}
+                        title="Muted"
+                      >
+                        <span className="text-white text-xs font-medium drop-shadow">Muted</span>
+                      </button>
+                    )}
+                    {extractedColors.darkVibrant && (
+                      <button
+                        onClick={() => setAccentColor(extractedColors.darkVibrant)}
+                        className={`aspect-square rounded-xl transition-all flex flex-col items-center justify-center ${
+                          accentColor === extractedColors.darkVibrant
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ background: extractedColors.darkVibrant }}
+                        title="Dark Vibrant"
+                      >
+                        <span className="text-white text-xs font-medium drop-shadow">Dark</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Color picker personnalisé */}
               <div className="mb-6">
-                <label className="block text-slate-400 text-sm mb-3">Couleur d'accent</label>
-                <div className="grid grid-cols-3 gap-3">
+                <label className="block text-slate-400 text-sm mb-3">Couleur personnalisée</label>
+                <div className="flex gap-3">
+                  <input
+                    type="color"
+                    value={customColor}
+                    onChange={(e) => {
+                      setCustomColor(e.target.value);
+                      setAccentColor(e.target.value);
+                    }}
+                    className="w-12 h-12 rounded-xl cursor-pointer border-0 bg-transparent"
+                  />
+                  <button
+                    onClick={() => setAccentColor(customColor)}
+                    className={`flex-1 rounded-xl transition-all flex items-center justify-center ${
+                      accentColor === customColor
+                        ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800'
+                        : 'hover:scale-[1.02]'
+                    }`}
+                    style={{ background: customColor }}
+                  >
+                    <span className="text-white text-sm font-medium drop-shadow">{customColor}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Presets */}
+              <div className="mb-6">
+                <label className="block text-slate-400 text-sm mb-3">Presets</label>
+                <div className="grid grid-cols-6 gap-2">
                   {COLOR_PRESETS.map((preset) => (
                     <button
                       key={preset.color}
                       onClick={() => setAccentColor(preset.color)}
-                      className={`aspect-square rounded-xl transition-all ${
+                      className={`aspect-square rounded-lg transition-all ${
                         accentColor === preset.color
-                          ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-105'
-                          : 'hover:scale-105'
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110'
+                          : 'hover:scale-110'
                       }`}
-                      style={{ background: preset.bg }}
+                      style={{ background: preset.color }}
                       title={preset.name}
                     />
                   ))}
