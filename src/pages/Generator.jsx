@@ -260,11 +260,10 @@ export default function Generator() {
     );
   };
 
-  // Combine les tags manuels avec les tags des sources (filtre les tags système ys:)
+  // Retourne uniquement les tags manuels (les sources sont affichées séparément)
   const getAllTags = () => {
     const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
-    const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
-    return [...new Set([...sourceTags, ...manualTags])].filter(t => !t.startsWith('ys:'));
+    return manualTags.filter(t => !t.startsWith('ys:'));
   };
 
   if (isLoading) {
