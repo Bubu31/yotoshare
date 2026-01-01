@@ -1,0 +1,30 @@
+services:
+  yotoshare:
+    build: .
+    container_name: yotoshare
+    restart: unless-stopped
+    networks:
+      - traefik
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      
+      # HTTP Router
+      - "traefik.http.routers.yotoshare.rule=Host(`yoto.busolin.fr`)"
+      - "traefik.http.routers.yotoshare.entrypoints=websecure"
+      - "traefik.http.routers.yotoshare.tls=true"
+      - "traefik.http.routers.yotoshare.tls.certresolver=letsencrypt"
+      
+      # Service
+      - "traefik.http.services.yotoshare.loadbalancer.server.port=80"
+      
+      # HTTP to HTTPS redirect (optionnel si configuré globalement dans Traefik)
+      - "traefik.http.routers.yotoshare-http.rule=Host(`yoto.busolin.fr`)"
+      - "traefik.http.routers.yotoshare-http.entrypoints=web"
+      - "traefik.http.routers.yotoshare-http.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+
+networks:
+  traefik:
+    external: true
