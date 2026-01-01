@@ -193,7 +193,7 @@ export default function Generator() {
               {/* Tips */}
               <div className="mt-6 p-4 bg-orange-500/10 rounded-xl border border-orange-500/20">
                 <p className="text-orange-400 text-sm">
-                  💡 Format carré 1080×1080px optimisé pour les réseaux sociaux
+                  💡 Le visuel est optimisé pour Facebook (940×788px)
                 </p>
               </div>
             </div>
@@ -257,142 +257,145 @@ const CardPreview = forwardRef(function CardPreview(
       />
 
       {/* Contenu */}
-      <div className="relative h-full flex flex-col p-10">
-        {/* Header avec cover et infos */}
-        <div className="flex gap-8 mb-6">
-          {/* Cover */}
+      <div className="relative h-full flex p-10 gap-10">
+        {/* Colonne gauche */}
+        <div className="flex flex-col items-center w-64">
+          {/* Cover - format portrait 2:3 comme les cartes Yoto */}
           <div
-            className="w-48 h-48 rounded-3xl overflow-hidden bg-black flex items-center justify-center shrink-0"
+            className="w-52 rounded-3xl overflow-hidden bg-black flex items-center justify-center"
             style={{
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 4px rgba(255,255,255,0.2)',
+              aspectRatio: '2/3',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 6px rgba(255,255,255,0.2)',
             }}
           >
             {coverUrl ? (
               <img src={coverUrl} alt="" className="w-full h-full object-cover" />
             ) : (
-              <span className="text-5xl">🎵</span>
+              <span className="text-6xl">🎵</span>
             )}
           </div>
 
-          {/* Infos */}
-          <div className="flex flex-col justify-center flex-1">
-            {/* Titre */}
-            <h1
-              className="text-white font-extrabold leading-tight mb-4"
+          {/* Badge Yoto */}
+          <div
+            className="mt-6 px-6 py-3 rounded-full flex items-center gap-3"
+            style={{
+              background: 'rgba(255,255,255,0.95)',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+              style={{ background: '#00C9B1' }}
+            >
+              Y
+            </div>
+            <span className="font-extrabold text-slate-800 text-lg">YOTO Player</span>
+          </div>
+
+          {/* Signature */}
+          <div
+            className="mt-auto px-6 py-3 rounded-2xl flex items-center gap-2"
+            style={{
+              background: 'rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(10px)',
+            }}
+          >
+            <span className="text-xl">✨</span>
+            <span className="text-white font-semibold">{CONFIG.signature}</span>
+          </div>
+        </div>
+
+        {/* Colonne droite */}
+        <div className="flex-1 flex flex-col">
+          {/* Titre */}
+          <h1
+            className="text-white font-extrabold leading-tight mb-3"
+            style={{
+              fontSize: 48,
+              textShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              fontFamily: '"Fredoka One", "Nunito", system-ui, sans-serif',
+            }}
+          >
+            {playlist.title}
+          </h1>
+
+          {/* Meta tags */}
+          <div className="flex gap-4 mb-6">
+            <div
+              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
               style={{
-                fontSize: 42,
-                textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-                fontFamily: '"Fredoka One", "Nunito", system-ui, sans-serif',
+                background: 'rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(10px)',
               }}
             >
-              {playlist.title}
-            </h1>
-
-            {/* Meta tags */}
-            <div className="flex gap-3 flex-wrap">
-              <div
-                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(10px)',
-                }}
-              >
-                <span>🎵</span>
-                <span>{tracks.length} pistes</span>
-              </div>
-              <div
-                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(10px)',
-                }}
-              >
-                <span>⏱️</span>
-                <span>{formatDuration(totalDuration)}</span>
-              </div>
-              {/* Badge Yoto */}
-              <div
-                className="px-4 py-2 rounded-full flex items-center gap-2"
-                style={{
-                  background: 'rgba(255,255,255,0.95)',
-                }}
-              >
-                <div
-                  className="w-6 h-6 rounded flex items-center justify-center text-white font-bold text-xs"
-                  style={{ background: '#00C9B1' }}
-                >
-                  Y
-                </div>
-                <span className="font-bold text-slate-800 text-sm">YOTO</span>
-              </div>
+              <span>🎵</span>
+              <span>{tracks.length} pistes</span>
+            </div>
+            <div
+              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              <span>⏱️</span>
+              <span>{formatDuration(totalDuration)}</span>
             </div>
           </div>
-        </div>
 
-        {/* Liste des pistes */}
-        <div
-          className="flex-1 rounded-3xl p-5 overflow-hidden"
-          style={{
-            background: 'rgba(255,255,255,0.95)',
-            boxShadow: '0 15px 50px rgba(0,0,0,0.2)',
-          }}
-        >
+          {/* Liste des pistes */}
           <div
-            className="font-extrabold text-slate-800 text-lg mb-3 flex items-center gap-2"
-            style={{ fontFamily: '"Fredoka One", system-ui' }}
+            className="flex-1 rounded-3xl p-6 overflow-hidden"
+            style={{
+              background: 'rgba(255,255,255,0.95)',
+              boxShadow: '0 15px 50px rgba(0,0,0,0.2)',
+            }}
           >
-            <span>📋</span>
-            <span>Liste des pistes</span>
-          </div>
+            <div
+              className="font-extrabold text-slate-800 text-xl mb-4 flex items-center gap-2"
+              style={{ fontFamily: '"Fredoka One", system-ui' }}
+            >
+              <span>📋</span>
+              <span>Liste des pistes</span>
+            </div>
 
-          <div className="space-y-1.5">
-            {tracks.slice(0, 12).map((track, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 px-3 py-2 rounded-xl"
-                style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
-              >
-                {/* Icône musique */}
-                <span
-                  className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: accentColor }}
+            <div className="space-y-2">
+              {tracks.slice(0, 8).map((track, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+                  style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
                 >
-                  <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                  </svg>
-                </span>
-                {/* Titre */}
-                <span className="font-semibold text-slate-800 truncate flex-1 text-sm">
-                  {track.title}
-                </span>
-                {/* Durée */}
-                <span className="text-slate-500 text-xs font-medium shrink-0">
-                  {formatTrackDuration(track.duration)}
-                </span>
-              </div>
-            ))}
+                  {/* Icône musique */}
+                  <span
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: accentColor }}
+                  >
+                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                  </span>
+                  {/* Titre */}
+                  <span className="font-semibold text-slate-800 truncate flex-1">
+                    {track.title}
+                  </span>
+                  {/* Durée */}
+                  <span className="text-slate-500 text-sm font-medium shrink-0">
+                    {formatTrackDuration(track.duration)}
+                  </span>
+                </div>
+              ))}
 
-            {tracks.length > 12 && (
-              <div
-                className="flex items-center justify-center px-3 py-2 rounded-xl text-slate-500 font-medium text-sm"
-                style={{ background: '#f1f3f4' }}
-              >
-                + {tracks.length - 12} autres pistes...
-              </div>
-            )}
+              {tracks.length > 8 && (
+                <div
+                  className="flex items-center justify-center px-4 py-2.5 rounded-xl text-slate-500 font-medium"
+                  style={{ background: '#f1f3f4' }}
+                >
+                  + {tracks.length - 8} autres pistes...
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-
-        {/* Signature */}
-        <div
-          className="mt-4 px-5 py-2.5 rounded-2xl flex items-center gap-2 self-start"
-          style={{
-            background: 'rgba(0,0,0,0.3)',
-            backdropFilter: 'blur(10px)',
-          }}
-        >
-          <span className="text-lg">✨</span>
-          <span className="text-white font-semibold text-sm">{CONFIG.signature}</span>
         </div>
       </div>
     </div>
