@@ -310,7 +310,7 @@ export default function Generator() {
         <div className="flex flex-col xl:flex-row gap-8">
           {/* Panneau de contrôle */}
           <div className="w-full xl:w-80 shrink-0">
-            <div className="bg-slate-800/50 rounded-2xl p-6 sticky top-24">
+            <div className="bg-slate-800/50 rounded-2xl p-6 sticky top-24 z-0">
               <h2 className="text-white font-semibold text-lg mb-6 flex items-center gap-2">
                 <span>🎨</span> Personnalisation
               </h2>
