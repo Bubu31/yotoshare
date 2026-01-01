@@ -559,10 +559,31 @@ export default function Generator() {
 // Composant de la carte (séparé pour le ref)
 import { forwardRef } from 'react';
 
+// Génère un dégradé à partir d'une couleur
+function generateGradient(hexColor) {
+  // Convertit hex en RGB
+  const r = parseInt(hexColor.slice(1, 3), 16);
+  const g = parseInt(hexColor.slice(3, 5), 16);
+  const b = parseInt(hexColor.slice(5, 7), 16);
+
+  // Crée une version plus claire pour le dégradé
+  const lighterR = Math.min(255, r + 60);
+  const lighterG = Math.min(255, g + 60);
+  const lighterB = Math.min(255, b + 60);
+  const lighterHex = `#${lighterR.toString(16).padStart(2, '0')}${lighterG.toString(16).padStart(2, '0')}${lighterB.toString(16).padStart(2, '0')}`;
+
+  return `linear-gradient(135deg, ${hexColor} 0%, ${lighterHex} 100%)`;
+}
+
 const CardPreview = forwardRef(function CardPreview(
   { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, tags, CATEGORIES, LANGUAGES },
   ref
 ) {
+  // Génère le fond : utilise le preset si la couleur correspond, sinon génère un dégradé
+  const backgroundStyle = selectedPreset?.color === accentColor
+    ? selectedPreset.bg
+    : generateGradient(accentColor);
+
   // Prépare les métadonnées à afficher
   const categoryLabel = category && category !== 'none'
     ? CATEGORIES.find(c => c.value === category)?.label
@@ -586,7 +607,7 @@ const CardPreview = forwardRef(function CardPreview(
       {/* Background */}
       <div
         className="absolute inset-0"
-        style={{ background: selectedPreset.bg }}
+        style={{ background: backgroundStyle }}
       />
       
       {/* Pattern décoratif */}
