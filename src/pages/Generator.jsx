@@ -700,7 +700,6 @@ const CardPreview = forwardRef(function CardPreview(
       style={{
         width: CONFIG.exportWidth,
         height: CONFIG.exportHeight,
-        borderRadius: 30,
         fontFamily: '"Nunito", "Segoe UI", system-ui, sans-serif',
       }}
     >
