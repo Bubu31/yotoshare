@@ -72,6 +72,18 @@ export function calculateTotalDuration(playlist) {
 }
 
 /**
+ * Construit l'URL complète d'une icône Yoto
+ * @param {string} iconRef - Référence de l'icône (ex: "yoto:#p6joTNu-xAbwLsko...")
+ * @returns {string|null} URL complète ou null
+ */
+function buildIconUrl(iconRef) {
+  if (!iconRef) return null;
+  // Enlève le préfixe "yoto:#" et construit l'URL
+  const iconId = iconRef.replace('yoto:#', '');
+  return `https://media-secure-v2.api.yotoplay.com/icons/${iconId}`;
+}
+
+/**
  * Extrait toutes les pistes d'une playlist
  * Les tracks n'ont pas de titre dans l'API Yoto, on utilise le titre du chapter
  * ou on génère un nom "Piste X"
@@ -85,8 +97,8 @@ export function extractAllTracks(playlist) {
   let globalTrackIndex = 1;
 
   for (const chapter of playlist.content.chapters) {
-    // Récupère l'icône du chapter si disponible
-    const iconUrl = chapter.display?.icon16x16 || null;
+    // Récupère et construit l'URL de l'icône du chapter
+    const iconUrl = buildIconUrl(chapter.display?.icon16x16);
 
     // Si le chapter a des tracks, on les ajoute
     if (chapter.tracks && chapter.tracks.length > 0) {
