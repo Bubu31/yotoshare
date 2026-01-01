@@ -466,6 +466,56 @@ const CardPreview = forwardRef(function CardPreview(
             )}
           </div>
 
+          {/* Métadonnées */}
+          {(categoryLabel || languageLabels.length > 0 || genreArray.length > 0 || tagsArray.length > 0) && (
+            <div className="mt-4 flex flex-col gap-2">
+              {/* Catégorie et Langue */}
+              {(categoryLabel || languageLabels.length > 0) && (
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {categoryLabel && (
+                    <span
+                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
+                      style={{ background: 'rgba(255,255,255,0.2)' }}
+                    >
+                      📁 {categoryLabel}
+                    </span>
+                  )}
+                  {languageLabels.length > 0 && (
+                    <span
+                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
+                      style={{ background: 'rgba(255,255,255,0.2)' }}
+                    >
+                      🌍 {languageLabels.join(', ')}
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* Genre et Tags */}
+              {(genreArray.length > 0 || tagsArray.length > 0) && (
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  {genreArray.map((g, i) => (
+                    <span
+                      key={`genre-${i}`}
+                      className="px-2.5 py-1 rounded-full text-white text-xs font-medium"
+                      style={{ background: accentColor }}
+                    >
+                      {g}
+                    </span>
+                  ))}
+                  {tagsArray.map((t, i) => (
+                    <span
+                      key={`tag-${i}`}
+                      className="px-2.5 py-1 rounded-full text-white text-xs font-medium"
+                      style={{ background: 'rgba(255,255,255,0.25)' }}
+                    >
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Signature */}
           <div
             className="mt-auto px-6 py-3 rounded-2xl"
@@ -492,10 +542,10 @@ const CardPreview = forwardRef(function CardPreview(
             {playlist.title}
           </h1>
 
-          {/* Meta tags */}
-          <div className="flex flex-wrap gap-2 mb-4">
+          {/* Meta tags - pistes et durée uniquement */}
+          <div className="flex gap-4 mb-6">
             <div
-              className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
+              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(10px)',
@@ -505,7 +555,7 @@ const CardPreview = forwardRef(function CardPreview(
               <span>{tracks.length} pistes</span>
             </div>
             <div
-              className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
+              className="px-5 py-2.5 rounded-full flex items-center gap-2 text-white font-semibold"
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(10px)',
@@ -514,55 +564,7 @@ const CardPreview = forwardRef(function CardPreview(
               <span>⏱️</span>
               <span>{formatDuration(totalDuration)}</span>
             </div>
-            {categoryLabel && (
-              <div
-                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(10px)',
-                }}
-              >
-                <span>📁</span>
-                <span>{categoryLabel}</span>
-              </div>
-            )}
-            {languageLabels.length > 0 && (
-              <div
-                className="px-4 py-2 rounded-full flex items-center gap-2 text-white font-semibold text-sm"
-                style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(10px)',
-                }}
-              >
-                <span>🌍</span>
-                <span>{languageLabels.join(', ')}</span>
-              </div>
-            )}
           </div>
-
-          {/* Genre et Tags */}
-          {(genreArray.length > 0 || tagsArray.length > 0) && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {genreArray.map((g, i) => (
-                <span
-                  key={`genre-${i}`}
-                  className="px-3 py-1 rounded-full text-white text-xs font-medium"
-                  style={{ background: accentColor }}
-                >
-                  {g}
-                </span>
-              ))}
-              {tagsArray.map((t, i) => (
-                <span
-                  key={`tag-${i}`}
-                  className="px-3 py-1 rounded-full text-white text-xs font-medium"
-                  style={{ background: 'rgba(255,255,255,0.25)' }}
-                >
-                  #{t}
-                </span>
-              ))}
-            </div>
-          )}
 
           {/* Liste des pistes */}
           <div
