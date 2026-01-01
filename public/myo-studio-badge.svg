@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Cercle extérieur -->
+  <circle cx="50" cy="50" r="46" fill="none" stroke="#FF6B00" stroke-width="3"/>
+  <!-- Cercle intérieur -->
+  <circle cx="50" cy="50" r="36" fill="none" stroke="#FF6B00" stroke-width="2.5"/>
+  <!-- Note de musique stylisée -->
+  <path d="M55 30 L55 60 C55 67 48 72 41 70 C34 68 31 61 35 55 C39 49 48 50 55 54 L55 30 L70 25 L70 32 L55 37"
+        fill="#FF6B00" stroke="#FF6B00" stroke-width="1"/>
+</svg>
