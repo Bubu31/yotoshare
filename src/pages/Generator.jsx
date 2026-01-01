@@ -44,14 +44,14 @@ export default function Generator() {
   ];
 
   const LANGUAGES = [
-    { value: 'fr', label: 'Français' },
-    { value: 'fr-fr', label: 'Français (France)' },
-    { value: 'en', label: 'Anglais' },
-    { value: 'en-gb', label: 'Anglais (UK)' },
-    { value: 'en-us', label: 'Anglais (US)' },
-    { value: 'de', label: 'Allemand' },
-    { value: 'es', label: 'Espagnol' },
-    { value: 'it', label: 'Italien' },
+    { value: 'fr', label: 'Français', flag: '🇫🇷' },
+    { value: 'fr-fr', label: 'Français (France)', flag: '🇫🇷' },
+    { value: 'en', label: 'Anglais', flag: '🇬🇧' },
+    { value: 'en-gb', label: 'Anglais (UK)', flag: '🇬🇧' },
+    { value: 'en-us', label: 'Anglais (US)', flag: '🇺🇸' },
+    { value: 'de', label: 'Allemand', flag: '🇩🇪' },
+    { value: 'es', label: 'Espagnol', flag: '🇪🇸' },
+    { value: 'it', label: 'Italien', flag: '🇮🇹' },
   ];
 
   const selectedPreset = COLOR_PRESETS.find(p => p.color === accentColor) || COLOR_PRESETS[0];
@@ -589,8 +589,8 @@ const CardPreview = forwardRef(function CardPreview(
     ? CATEGORIES.find(c => c.value === category)?.label
     : null;
   const genreArray = genre ? genre.split(',').map(g => g.trim()).filter(Boolean) : [];
-  const languageLabels = languages.length > 0
-    ? languages.map(l => LANGUAGES.find(lang => lang.value === l)?.label).filter(Boolean)
+  const languageData = languages.length > 0
+    ? languages.map(l => LANGUAGES.find(lang => lang.value === l)).filter(Boolean)
     : [];
   const tagsArray = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [];
   return (
@@ -643,10 +643,10 @@ const CardPreview = forwardRef(function CardPreview(
           </div>
 
           {/* Métadonnées */}
-          {(categoryLabel || languageLabels.length > 0 || genreArray.length > 0 || tagsArray.length > 0) && (
+          {(categoryLabel || languageData.length > 0 || genreArray.length > 0 || tagsArray.length > 0) && (
             <div className="mt-4 flex flex-col gap-2">
               {/* Catégorie et Langue */}
-              {(categoryLabel || languageLabels.length > 0) && (
+              {(categoryLabel || languageData.length > 0) && (
                 <div className="flex flex-wrap gap-2 justify-center">
                   {categoryLabel && (
                     <span
@@ -656,12 +656,12 @@ const CardPreview = forwardRef(function CardPreview(
                       📁 {categoryLabel}
                     </span>
                   )}
-                  {languageLabels.length > 0 && (
+                  {languageData.length > 0 && (
                     <span
                       className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
                       style={{ background: 'rgba(255,255,255,0.2)' }}
                     >
-                      🌍 {languageLabels.join(', ')}
+                      {languageData.map(l => l.flag).join(' ')} {languageData.map(l => l.label).join(', ')}
                     </span>
                   )}
                 </div>
@@ -751,7 +751,7 @@ const CardPreview = forwardRef(function CardPreview(
             }}
           >
             <div
-              className="font-extrabold text-slate-800 text-xl mb-4 flex items-center gap-2"
+              className="font-bold text-slate-800 text-xl mb-4 flex items-center gap-2"
               style={{ fontFamily: '"Fredoka One", system-ui' }}
             >
               <span>📋</span>
