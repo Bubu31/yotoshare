@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [playlists, setPlaylists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -19,28 +20,47 @@ export default function Dashboard() {
   }, [authLoading, isAuthenticated, navigate]);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchPlaylists = async () => {
       if (!isAuthenticated) return;
-      
+
       try {
         setIsLoading(true);
         const token = await getValidToken();
+        if (!isMounted) return;
         const data = await yotoAPI.getMyPlaylists(token);
+        console.log('Playlists data:', data);
+        if (!isMounted) return;
         setPlaylists(data);
+        setError(null);
       } catch (err) {
         console.error('Erreur chargement playlists:', err);
-        setError('Impossible de charger vos playlists');
+        if (isMounted) {
+          setError('Impossible de charger vos playlists');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchPlaylists();
-  }, [isAuthenticated, getValidToken]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated]); // Removed getValidToken from dependencies
 
   const handleSelectPlaylist = (playlist) => {
     navigate(`/generate/${playlist.cardId}`, { state: { playlist } });
   };
+
+  // Filtrer les playlists selon la recherche
+  const filteredPlaylists = playlists.filter(playlist =>
+    playlist.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (authLoading) {
     return (
@@ -78,15 +98,39 @@ export default function Dashboard() {
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Vos playlists MYO</h1>
-          <p className="text-slate-400">Sélectionnez une playlist pour générer un visuel de partage</p>
+          <p className="text-slate-400 mb-6">Sélectionnez une playlist pour générer un visuel de partage</p>
+
+          {/* Champ de recherche */}
+          <div className="relative max-w-md">
+            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Rechercher une playlist..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-slate-800/50 rounded-2xl p-4 animate-pulse">
-                <div className="w-full aspect-square bg-slate-700 rounded-xl mb-4" />
-                <div className="h-6 bg-slate-700 rounded w-3/4 mb-2" />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="bg-slate-800/50 rounded-2xl p-3 animate-pulse">
+                <div className="w-full aspect-[2/3] bg-slate-700 rounded-xl mb-3" />
+                <div className="h-5 bg-slate-700 rounded w-3/4 mb-2" />
                 <div className="h-4 bg-slate-700 rounded w-1/2" />
               </div>
             ))}
@@ -113,9 +157,21 @@ export default function Dashboard() {
               Créez des playlists "Make Your Own" sur l'app Yoto pour les voir apparaître ici
             </p>
           </div>
+        ) : filteredPlaylists.length === 0 ? (
+          <div className="bg-slate-800/50 rounded-2xl p-12 text-center">
+            <div className="w-20 h-20 bg-slate-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">Aucun résultat</h3>
+            <p className="text-slate-400">
+              Aucune playlist ne correspond à "{searchQuery}"
+            </p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {playlists.map((playlist) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredPlaylists.map((playlist) => (
               <PlaylistCard
                 key={playlist.cardId}
                 playlist={playlist}
@@ -130,9 +186,10 @@ export default function Dashboard() {
 }
 
 function PlaylistCard({ playlist, onClick }) {
-  const coverUrl = playlist.metadata?.cover?.imageUrl;
-  const tracks = extractAllTracks(playlist);
-  const totalDuration = calculateTotalDuration(playlist);
+  // Utilise imageL pour la cover (format large)
+  const coverUrl = playlist.metadata?.cover?.imageL || playlist.metadata?.cover?.imageM || playlist.metadata?.cover?.imageS;
+  // Durée depuis metadata.media
+  const duration = playlist.metadata?.media?.readableDuration || formatDuration(playlist.metadata?.media?.duration || 0);
 
   return (
     <button
@@ -140,7 +197,7 @@ function PlaylistCard({ playlist, onClick }) {
       className="bg-slate-800/50 hover:bg-slate-700/50 rounded-2xl p-4 text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-xl border border-transparent hover:border-orange-500/30 group"
     >
       {/* Cover */}
-      <div className="w-full aspect-square bg-slate-700 rounded-xl mb-4 overflow-hidden relative">
+      <div className="w-full aspect-[2/3] bg-slate-700 rounded-xl mb-4 overflow-hidden relative">
         {coverUrl ? (
           <img
             src={coverUrl}
@@ -152,7 +209,7 @@ function PlaylistCard({ playlist, onClick }) {
             <span className="text-6xl">🎵</span>
           </div>
         )}
-        
+
         {/* Overlay on hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
           <span className="px-4 py-2 bg-orange-500 text-white text-sm font-semibold rounded-full flex items-center gap-2">
@@ -167,20 +224,13 @@ function PlaylistCard({ playlist, onClick }) {
 
       {/* Info */}
       <h3 className="text-white font-semibold text-lg mb-2 truncate">{playlist.title}</h3>
-      
+
       <div className="flex items-center gap-4 text-slate-400 text-sm">
-        <span className="flex items-center gap-1">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-          </svg>
-          {tracks.length} pistes
-        </span>
-        
         <span className="flex items-center gap-1">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          {formatDuration(totalDuration)}
+          {duration}
         </span>
       </div>
     </button>
