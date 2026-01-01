@@ -22,14 +22,14 @@ class YotoAPI {
    * Récupère les playlists MYO de l'utilisateur
    */
   async getMyPlaylists(accessToken) {
-    const response = await fetch(`${this.baseUrl}/card/mine`, {
+    const response = await fetch(`${this.baseUrl}/content/mine`, {
       headers: this.getHeaders(accessToken),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur API: ${response.status}`);
     }
-    
+
     const data = await response.json();
     return data.cards || [];
   }
@@ -38,14 +38,14 @@ class YotoAPI {
    * Récupère les détails d'une playlist
    */
   async getPlaylistDetails(accessToken, cardId) {
-    const response = await fetch(`${this.baseUrl}/card/${cardId}`, {
+    const response = await fetch(`${this.baseUrl}/content/${cardId}`, {
       headers: this.getHeaders(accessToken),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur API: ${response.status}`);
     }
-    
+
     const data = await response.json();
     return data.card;
   }
