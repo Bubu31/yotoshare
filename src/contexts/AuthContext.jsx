@@ -1,0 +1,169 @@
+import { createContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { CONFIG } from '../config';
+import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
+import { yotoAPI } from '../utils/api';
+
+const STORAGE_KEYS = {
+  accessToken: 'yotoshare_access_token',
+  refreshToken: 'yotoshare_refresh_token',
+  expiresAt: 'yotoshare_expires_at',
+  codeVerifier: 'yotoshare_code_verifier',
+  state: 'yotoshare_state',
+};
+
+export const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+
+  // Vérifie si le token est expiré
+  const isTokenExpired = useCallback(() => {
+    const expiresAt = localStorage.getItem(STORAGE_KEYS.expiresAt);
+    if (!expiresAt) return true;
+    return Date.now() > parseInt(expiresAt, 10);
+  }, []);
+
+  // Sauvegarde les tokens
+  const saveTokens = useCallback((tokens) => {
+    localStorage.setItem(STORAGE_KEYS.accessToken, tokens.access_token);
+    if (tokens.refresh_token) {
+      localStorage.setItem(STORAGE_KEYS.refreshToken, tokens.refresh_token);
+    }
+    const expiresAt = Date.now() + (tokens.expires_in * 1000);
+    localStorage.setItem(STORAGE_KEYS.expiresAt, expiresAt.toString());
+  }, []);
+
+  // Déconnexion
+  const logout = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEYS.accessToken);
+    localStorage.removeItem(STORAGE_KEYS.refreshToken);
+    localStorage.removeItem(STORAGE_KEYS.expiresAt);
+    setAccessToken(null);
+    setIsAuthenticated(false);
+    setUser(null);
+  }, []);
+
+  // Charge les tokens depuis le localStorage
+  const loadTokens = useCallback(async () => {
+    const storedAccessToken = localStorage.getItem(STORAGE_KEYS.accessToken);
+    const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
+
+    if (!storedAccessToken) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (isTokenExpired() && storedRefreshToken) {
+      try {
+        const tokens = await yotoAPI.refreshToken(storedRefreshToken);
+        saveTokens(tokens);
+        setAccessToken(tokens.access_token);
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Erreur refresh token:', error);
+        logout();
+      }
+    } else if (!isTokenExpired()) {
+      setAccessToken(storedAccessToken);
+      setIsAuthenticated(true);
+    }
+
+    setIsLoading(false);
+  }, [isTokenExpired, saveTokens, logout]);
+
+  // Démarre le flow OAuth
+  const login = useCallback(async () => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    const state = generateState();
+
+    localStorage.setItem(STORAGE_KEYS.codeVerifier, codeVerifier);
+    localStorage.setItem(STORAGE_KEYS.state, state);
+
+    const params = new URLSearchParams({
+      audience: CONFIG.audience,
+      scope: 'offline_access',
+      response_type: 'code',
+      client_id: CONFIG.clientId,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      redirect_uri: CONFIG.redirectUri,
+      state: state,
+    });
+
+    window.location.href = `${CONFIG.authUrl}?${params.toString()}`;
+  }, []);
+
+  // Gère le callback OAuth
+  const handleCallback = useCallback(async (code, returnedState) => {
+    const storedState = localStorage.getItem(STORAGE_KEYS.state);
+    const codeVerifier = localStorage.getItem(STORAGE_KEYS.codeVerifier);
+
+    if (returnedState !== storedState) {
+      throw new Error('State invalide - possible attaque CSRF');
+    }
+
+    if (!codeVerifier) {
+      throw new Error('Code verifier manquant');
+    }
+
+    const tokens = await yotoAPI.exchangeCodeForToken(code, codeVerifier);
+    saveTokens(tokens);
+
+    localStorage.removeItem(STORAGE_KEYS.codeVerifier);
+    localStorage.removeItem(STORAGE_KEYS.state);
+
+    setAccessToken(tokens.access_token);
+    setIsAuthenticated(true);
+
+    return tokens;
+  }, [saveTokens]);
+
+  // Récupère un token valide (refresh si nécessaire)
+  const getValidToken = useCallback(async () => {
+    if (!isTokenExpired()) {
+      return localStorage.getItem(STORAGE_KEYS.accessToken);
+    }
+
+    const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
+    if (!refreshToken) {
+      logout();
+      throw new Error('Session expirée');
+    }
+
+    try {
+      const tokens = await yotoAPI.refreshToken(refreshToken);
+      saveTokens(tokens);
+      setAccessToken(tokens.access_token);
+      return tokens.access_token;
+    } catch (error) {
+      logout();
+      throw new Error('Session expirée');
+    }
+  }, [isTokenExpired, saveTokens, logout]);
+
+  // Charge les tokens au montage
+  useEffect(() => {
+    loadTokens();
+  }, [loadTokens]);
+
+  const value = useMemo(() => ({
+    isAuthenticated,
+    isLoading,
+    user,
+    accessToken,
+    login,
+    logout,
+    handleCallback,
+    getValidToken,
+  }), [isAuthenticated, isLoading, user, accessToken, login, logout, handleCallback, getValidToken]);
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}

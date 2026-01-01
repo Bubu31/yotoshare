@@ -12,7 +12,7 @@ export default function Generator() {
   const navigate = useNavigate();
   const cardRef = useRef(null);
   
-  const { isAuthenticated, getValidToken } = useAuth();
+  const { getValidToken } = useAuth();
   const [playlist, setPlaylist] = useState(location.state?.playlist || null);
   const [isLoading, setIsLoading] = useState(!playlist);
   const [isExporting, setIsExporting] = useState(false);
@@ -22,29 +22,36 @@ export default function Generator() {
   const selectedPreset = COLOR_PRESETS.find(p => p.color === accentColor) || COLOR_PRESETS[0];
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/', { replace: true });
-      return;
-    }
+    let isMounted = true;
 
     const fetchPlaylist = async () => {
       if (playlist) return;
-      
+
       try {
         setIsLoading(true);
         const token = await getValidToken();
+        if (!isMounted) return;
         const data = await yotoAPI.getPlaylistDetails(token, cardId);
+        if (!isMounted) return;
         setPlaylist(data);
       } catch (err) {
         console.error('Erreur chargement playlist:', err);
-        setError('Impossible de charger cette playlist');
+        if (isMounted) {
+          setError('Impossible de charger cette playlist');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchPlaylist();
-  }, [cardId, playlist, isAuthenticated, getValidToken, navigate]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [cardId]); // Removed getValidToken and playlist from dependencies
 
   const handleExport = async () => {
     if (!cardRef.current) return;
@@ -101,7 +108,7 @@ export default function Generator() {
 
   const tracks = extractAllTracks(playlist);
   const totalDuration = calculateTotalDuration(playlist);
-  const coverUrl = playlist.metadata?.cover?.imageUrl;
+  const coverUrl = playlist.metadata?.cover?.imageL || playlist.metadata?.cover?.imageM || playlist.metadata?.cover?.imageS;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
