@@ -76,7 +76,7 @@ export function calculateTotalDuration(playlist) {
  * Les tracks n'ont pas de titre dans l'API Yoto, on utilise le titre du chapter
  * ou on génère un nom "Piste X"
  * @param {object} playlist
- * @returns {Array} Liste des pistes avec leurs titres
+ * @returns {Array} Liste des pistes avec leurs titres, durées et icônes
  */
 export function extractAllTracks(playlist) {
   if (!playlist?.content?.chapters) return [];
@@ -85,23 +85,29 @@ export function extractAllTracks(playlist) {
   let globalTrackIndex = 1;
 
   for (const chapter of playlist.content.chapters) {
+    // Récupère l'icône du chapter si disponible
+    const iconUrl = chapter.display?.icon16x16 || null;
+
     // Si le chapter a des tracks, on les ajoute
     if (chapter.tracks && chapter.tracks.length > 0) {
       for (const track of chapter.tracks) {
         tracks.push({
-          // Utilise le titre du chapter s'il n'y a qu'une track, sinon génère un nom
           title: chapter.title || `Piste ${globalTrackIndex}`,
           duration: track.duration || chapter.duration || 0,
           chapterTitle: chapter.title,
+          icon: iconUrl,
+          overlayLabel: chapter.overlayLabel,
         });
         globalTrackIndex++;
       }
     } else if (chapter.title) {
-      // Si pas de tracks mais un chapter avec titre (et potentiellement une durée)
+      // Si pas de tracks mais un chapter avec titre
       tracks.push({
         title: chapter.title,
         duration: chapter.duration || 0,
         chapterTitle: chapter.title,
+        icon: iconUrl,
+        overlayLabel: chapter.overlayLabel,
       });
       globalTrackIndex++;
     }

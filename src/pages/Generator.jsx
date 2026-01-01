@@ -366,14 +366,18 @@ const CardPreview = forwardRef(function CardPreview(
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
                   style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
                 >
-                  {/* Icône musique */}
+                  {/* Icône de la piste */}
                   <span
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: accentColor }}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+                    style={{ background: track.icon ? 'transparent' : accentColor }}
                   >
-                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                    </svg>
+                    {track.icon ? (
+                      <img src={track.icon} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                      </svg>
+                    )}
                   </span>
                   {/* Titre */}
                   <span className="font-semibold text-slate-800 truncate flex-1">
