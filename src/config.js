@@ -12,7 +12,7 @@ export const CONFIG = {
   
   // App
   appName: 'YotoShare',
-  signature: 'Partagé par Mathieu',
+  signature: 'Partagé avec ❤️ par Mathieu',
   
   // Design
   colors: {

@@ -275,32 +275,14 @@ const CardPreview = forwardRef(function CardPreview(
             )}
           </div>
 
-          {/* Badge Yoto */}
-          <div
-            className="mt-6 px-6 py-3 rounded-full flex items-center gap-3"
-            style={{
-              background: 'rgba(255,255,255,0.95)',
-              boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
-            }}
-          >
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-              style={{ background: '#00C9B1' }}
-            >
-              Y
-            </div>
-            <span className="font-extrabold text-slate-800 text-lg">YOTO Player</span>
-          </div>
-
           {/* Signature */}
           <div
-            className="mt-auto px-6 py-3 rounded-2xl flex items-center gap-2"
+            className="mt-auto px-6 py-3 rounded-2xl"
             style={{
               background: 'rgba(0,0,0,0.3)',
               backdropFilter: 'blur(10px)',
             }}
           >
-            <span className="text-xl">✨</span>
             <span className="text-white font-semibold">{CONFIG.signature}</span>
           </div>
         </div>
