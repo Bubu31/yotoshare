@@ -22,9 +22,9 @@ export const CONFIG = {
     bgPanel: '#16213e',
   },
   
-  // Export
-  exportWidth: 940,
-  exportHeight: 788,
+  // Export (format carré 1080x1080 optimisé réseaux sociaux)
+  exportWidth: 1080,
+  exportHeight: 1080,
 };
 
 export const COLOR_PRESETS = [
