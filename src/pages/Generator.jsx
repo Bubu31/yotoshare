@@ -24,6 +24,7 @@ export default function Generator() {
   const [accentColor, setAccentColor] = useState(COLOR_PRESETS[0].color);
   const [customColor, setCustomColor] = useState('#F95E3F');
   const [extractedColors, setExtractedColors] = useState(null);
+  const colorLoadedFromTagsRef = useRef(false);
   const [error, setError] = useState(null);
 
   // État des métadonnées
@@ -86,7 +87,35 @@ export default function Generator() {
           setCategory(data.metadata.category || 'none');
           setGenre(Array.isArray(data.metadata.genre) ? data.metadata.genre.join(', ') : '');
           setLanguages(Array.isArray(data.metadata.languages) ? data.metadata.languages : []);
-          setTags(Array.isArray(data.metadata.tags) ? data.metadata.tags.join(', ') : '');
+
+          // Traite les tags : extrait la couleur sauvegardée et les sources
+          if (Array.isArray(data.metadata.tags)) {
+            const allTags = data.metadata.tags;
+
+            // Cherche le tag couleur (ys:color:#XXXXXX)
+            const colorTag = allTags.find(t => t.startsWith('ys:color:'));
+            if (colorTag) {
+              const savedColor = colorTag.replace('ys:color:', '');
+              if (/^#[0-9A-Fa-f]{6}$/.test(savedColor)) {
+                setAccentColor(savedColor);
+                setCustomColor(savedColor);
+                colorLoadedFromTagsRef.current = true;
+              }
+            }
+
+            // Détecte les sources depuis les tags
+            const sourceValues = SOURCES
+              .filter(src => allTags.includes(src.tag))
+              .map(src => src.value);
+            setSources(sourceValues);
+
+            // Filtre les tags système (ys:) et les tags sources pour l'affichage
+            const sourceTags = SOURCES.map(s => s.tag);
+            const userTags = allTags.filter(t =>
+              !t.startsWith('ys:') && !sourceTags.includes(t)
+            );
+            setTags(userTags.join(', '));
+          }
         }
       } catch (err) {
         console.error('Erreur chargement playlist:', err);
@@ -138,7 +167,8 @@ export default function Generator() {
 
         setExtractedColors(colors);
         // Sélectionne automatiquement la couleur Vibrant si disponible
-        if (colors.vibrant) {
+        // (sauf si une couleur a été chargée depuis les tags)
+        if (colors.vibrant && !colorLoadedFromTagsRef.current) {
           setAccentColor(colors.vibrant);
         }
       } catch (err) {
@@ -186,7 +216,9 @@ export default function Generator() {
       // Combine les tags manuels avec les tags des sources
       const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
       const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
-      const allTags = [...new Set([...sourceTags, ...manualTags])];
+      // Ajoute le tag couleur YotoShare (préfixé pour être filtré à l'affichage)
+      const colorTag = `ys:color:${accentColor}`;
+      const allTags = [...new Set([colorTag, ...sourceTags, ...manualTags])];
 
       // Envoie la playlist complète avec les métadonnées mises à jour
       const updatedPlaylist = {
@@ -228,11 +260,11 @@ export default function Generator() {
     );
   };
 
-  // Combine les tags manuels avec les tags des sources
+  // Combine les tags manuels avec les tags des sources (filtre les tags système ys:)
   const getAllTags = () => {
     const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
     const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
-    return [...new Set([...sourceTags, ...manualTags])];
+    return [...new Set([...sourceTags, ...manualTags])].filter(t => !t.startsWith('ys:'));
   };
 
   if (isLoading) {
