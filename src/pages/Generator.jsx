@@ -30,6 +30,7 @@ export default function Generator() {
   const [category, setCategory] = useState('none');
   const [genre, setGenre] = useState('');
   const [languages, setLanguages] = useState([]);
+  const [sources, setSources] = useState([]);
   const [tags, setTags] = useState('');
 
   const CATEGORIES = [
@@ -44,14 +45,22 @@ export default function Generator() {
   ];
 
   const LANGUAGES = [
-    { value: 'fr', label: 'Français', flag: '🇫🇷' },
-    { value: 'fr-fr', label: 'Français (France)', flag: '🇫🇷' },
-    { value: 'en', label: 'Anglais', flag: '🇬🇧' },
-    { value: 'en-gb', label: 'Anglais (UK)', flag: '🇬🇧' },
-    { value: 'en-us', label: 'Anglais (US)', flag: '🇺🇸' },
-    { value: 'de', label: 'Allemand', flag: '🇩🇪' },
-    { value: 'es', label: 'Espagnol', flag: '🇪🇸' },
-    { value: 'it', label: 'Italien', flag: '🇮🇹' },
+    { value: 'fr', label: 'Français', code: 'FR' },
+    { value: 'fr-fr', label: 'Français (France)', code: 'FR' },
+    { value: 'en', label: 'Anglais', code: 'EN' },
+    { value: 'en-gb', label: 'Anglais (UK)', code: 'GB' },
+    { value: 'en-us', label: 'Anglais (US)', code: 'US' },
+    { value: 'de', label: 'Allemand', code: 'DE' },
+    { value: 'es', label: 'Espagnol', code: 'ES' },
+    { value: 'it', label: 'Italien', code: 'IT' },
+  ];
+
+  const SOURCES = [
+    { value: 'youtube', label: 'YouTube', icon: '▶️', tag: 'YouTube' },
+    { value: 'tonie', label: 'Tonie', icon: '🎧', tag: 'Tonie' },
+    { value: 'yoto', label: 'Yoto', icon: '🟠', tag: 'Yoto' },
+    { value: 'spotify', label: 'Spotify', icon: '🎵', tag: 'Spotify' },
+    { value: 'podcast', label: 'Podcast', icon: '🎙️', tag: 'Podcast' },
   ];
 
   const selectedPreset = COLOR_PRESETS.find(p => p.color === accentColor) || COLOR_PRESETS[0];
@@ -171,6 +180,11 @@ export default function Generator() {
       setSaveSuccess(false);
       const token = await getValidToken();
 
+      // Combine les tags manuels avec les tags des sources
+      const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
+      const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
+      const allTags = [...new Set([...sourceTags, ...manualTags])];
+
       // Envoie la playlist complète avec les métadonnées mises à jour
       const updatedPlaylist = {
         title: playlist.title,
@@ -180,7 +194,7 @@ export default function Generator() {
           category,
           genre: genre.split(',').map(g => g.trim()).filter(Boolean),
           languages,
-          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+          tags: allTags,
         },
       };
 
@@ -201,6 +215,21 @@ export default function Generator() {
         ? prev.filter(l => l !== lang)
         : [...prev, lang]
     );
+  };
+
+  const toggleSource = (source) => {
+    setSources(prev =>
+      prev.includes(source)
+        ? prev.filter(s => s !== source)
+        : [...prev, source]
+    );
+  };
+
+  // Combine les tags manuels avec les tags des sources
+  const getAllTags = () => {
+    const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
+    const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
+    return [...new Set([...sourceTags, ...manualTags])];
   };
 
   if (isLoading) {
@@ -481,9 +510,31 @@ export default function Generator() {
                 </div>
               </div>
 
+              {/* Sources */}
+              <div className="mb-4">
+                <label className="block text-slate-400 text-sm mb-2">Source</label>
+                <div className="flex flex-wrap gap-2">
+                  {SOURCES.map(source => (
+                    <button
+                      key={source.value}
+                      type="button"
+                      onClick={() => toggleSource(source.value)}
+                      className={`px-3 py-1 rounded-full text-sm transition-all flex items-center gap-1 ${
+                        sources.includes(source.value)
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      <span>{source.icon}</span>
+                      <span>{source.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Tags */}
               <div className="mb-6">
-                <label className="block text-slate-400 text-sm mb-2">Tags (séparés par virgule)</label>
+                <label className="block text-slate-400 text-sm mb-2">Tags additionnels (séparés par virgule)</label>
                 <input
                   type="text"
                   value={tags}
@@ -491,6 +542,11 @@ export default function Generator() {
                   placeholder="histoire, enfants, audio..."
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
                 />
+                {sources.length > 0 && (
+                  <p className="text-slate-500 text-xs mt-1">
+                    Tags auto: {sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean).join(', ')}
+                  </p>
+                )}
               </div>
 
               {/* Bouton sauvegarder */}
@@ -544,9 +600,11 @@ export default function Generator() {
                 category={category}
                 genre={genre}
                 languages={languages}
-                tags={tags}
+                sources={sources}
+                tags={getAllTags()}
                 CATEGORIES={CATEGORIES}
                 LANGUAGES={LANGUAGES}
+                SOURCES={SOURCES}
               />
             </div>
           </div>
@@ -576,7 +634,7 @@ function generateGradient(hexColor) {
 }
 
 const CardPreview = forwardRef(function CardPreview(
-  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, tags, CATEGORIES, LANGUAGES },
+  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, sources, tags, CATEGORIES, LANGUAGES, SOURCES },
   ref
 ) {
   // Génère le fond : utilise le preset si la couleur correspond, sinon génère un dégradé
@@ -592,7 +650,11 @@ const CardPreview = forwardRef(function CardPreview(
   const languageData = languages.length > 0
     ? languages.map(l => LANGUAGES.find(lang => lang.value === l)).filter(Boolean)
     : [];
-  const tagsArray = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const sourceData = sources?.length > 0
+    ? sources.map(s => SOURCES.find(src => src.value === s)).filter(Boolean)
+    : [];
+  // tags est déjà un tableau
+  const tagsArray = Array.isArray(tags) ? tags : [];
   return (
     <div
       ref={ref}
@@ -643,10 +705,10 @@ const CardPreview = forwardRef(function CardPreview(
           </div>
 
           {/* Métadonnées */}
-          {(categoryLabel || languageData.length > 0 || genreArray.length > 0 || tagsArray.length > 0) && (
+          {(categoryLabel || languageData.length > 0 || sourceData.length > 0 || genreArray.length > 0 || tagsArray.length > 0) && (
             <div className="mt-4 flex flex-col gap-2">
-              {/* Catégorie et Langue */}
-              {(categoryLabel || languageData.length > 0) && (
+              {/* Catégorie, Langue et Source */}
+              {(categoryLabel || languageData.length > 0 || sourceData.length > 0) && (
                 <div className="flex flex-wrap gap-2 justify-center">
                   {categoryLabel && (
                     <span
@@ -661,7 +723,15 @@ const CardPreview = forwardRef(function CardPreview(
                       className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
                       style={{ background: 'rgba(255,255,255,0.2)' }}
                     >
-                      {languageData.map(l => l.flag).join(' ')} {languageData.map(l => l.label).join(', ')}
+                      {languageData.map(l => l.code).join('/')} {languageData.map(l => l.label).join(', ')}
+                    </span>
+                  )}
+                  {sourceData.length > 0 && (
+                    <span
+                      className="px-3 py-1.5 rounded-full text-white text-xs font-medium flex items-center gap-1"
+                      style={{ background: 'rgba(255,255,255,0.2)' }}
+                    >
+                      📀 {sourceData.map(s => s.label).join(', ')}
                     </span>
                   )}
                 </div>
