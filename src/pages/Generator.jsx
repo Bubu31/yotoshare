@@ -842,7 +842,7 @@ const CardPreview = forwardRef(function CardPreview(
         <div className="flex-1 flex flex-col">
           {/* Titre */}
           <h1
-            className="text-white font-extrabold leading-tight mb-3"
+            className="text-white font-extrabold leading-tight mb-3 pr-56"
             style={{
               fontSize: 48,
               textShadow: '0 4px 20px rgba(0,0,0,0.3)',
