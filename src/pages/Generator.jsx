@@ -33,6 +33,7 @@ export default function Generator() {
   const [languages, setLanguages] = useState([]);
   const [sources, setSources] = useState([]);
   const [tags, setTags] = useState('');
+  const [trackListSize, setTrackListSize] = useState(2); // 1=très compact, 2=compact, 3=moyen, 4=normal
 
   const CATEGORIES = [
     { value: 'none', label: 'Aucune' },
@@ -474,6 +475,25 @@ export default function Generator() {
                 </div>
               </div>
 
+              {/* Taille de la liste */}
+              <div className="mb-6">
+                <label className="block text-slate-400 text-sm mb-3">
+                  Taille de la liste ({['Très compact', 'Compact', 'Moyen', 'Normal'][trackListSize - 1]})
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="4"
+                  value={trackListSize}
+                  onChange={(e) => setTrackListSize(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>Compact</span>
+                  <span>Normal</span>
+                </div>
+              </div>
+
               {/* Info playlist */}
               <div className="border-t border-slate-700 pt-6">
                 <h3 className="text-white font-medium mb-3">{playlist.title}</h3>
@@ -640,6 +660,7 @@ export default function Generator() {
                 languages={languages}
                 sources={sources}
                 tags={getAllTags()}
+                trackListSize={trackListSize}
                 CATEGORIES={CATEGORIES}
                 LANGUAGES={LANGUAGES}
                 SOURCES={SOURCES}
@@ -672,7 +693,7 @@ function generateGradient(hexColor) {
 }
 
 const CardPreview = forwardRef(function CardPreview(
-  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, sources, tags, CATEGORIES, LANGUAGES, SOURCES },
+  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, sources, tags, trackListSize, CATEGORIES, LANGUAGES, SOURCES },
   ref
 ) {
   // Génère le fond : utilise le preset si la couleur correspond, sinon génère un dégradé
@@ -878,51 +899,52 @@ const CardPreview = forwardRef(function CardPreview(
 
           {/* Liste des pistes */}
           {(() => {
-            // Calcul dynamique des tailles en fonction du nombre de pistes
-            const trackCount = tracks.length;
-            let trackPadding, trackGap, iconSize, iconSvgSize, fontSize, headerSize, headerMargin, containerPadding;
+            // Tailles basées sur le slider (1=très compact, 2=compact, 3=moyen, 4=normal)
+            const sizeConfigs = {
+              1: { // Très compact
+                trackPadding: 'py-0.5 px-2',
+                trackGap: 'gap-1',
+                iconSize: 'w-4 h-4',
+                iconSvgSize: 'w-2 h-2',
+                fontSize: 'text-xs',
+                headerSize: 'text-sm',
+                headerMargin: 'mb-1',
+                containerPadding: 'p-3',
+              },
+              2: { // Compact
+                trackPadding: 'py-1 px-2.5',
+                trackGap: 'gap-1.5',
+                iconSize: 'w-5 h-5',
+                iconSvgSize: 'w-2.5 h-2.5',
+                fontSize: 'text-xs',
+                headerSize: 'text-base',
+                headerMargin: 'mb-2',
+                containerPadding: 'p-4',
+              },
+              3: { // Moyen
+                trackPadding: 'py-1.5 px-3',
+                trackGap: 'gap-2',
+                iconSize: 'w-6 h-6',
+                iconSvgSize: 'w-3 h-3',
+                fontSize: 'text-sm',
+                headerSize: 'text-lg',
+                headerMargin: 'mb-3',
+                containerPadding: 'p-5',
+              },
+              4: { // Normal
+                trackPadding: 'py-2.5 px-4',
+                trackGap: 'gap-3',
+                iconSize: 'w-8 h-8',
+                iconSvgSize: 'w-4 h-4',
+                fontSize: 'text-base',
+                headerSize: 'text-xl',
+                headerMargin: 'mb-4',
+                containerPadding: 'p-6',
+              },
+            };
 
-            if (trackCount <= 8) {
-              // Taille normale
-              trackPadding = 'py-2.5 px-4';
-              trackGap = 'gap-3';
-              iconSize = 'w-8 h-8';
-              iconSvgSize = 'w-4 h-4';
-              fontSize = 'text-base';
-              headerSize = 'text-xl';
-              headerMargin = 'mb-4';
-              containerPadding = 'p-6';
-            } else if (trackCount <= 12) {
-              // Taille moyenne
-              trackPadding = 'py-1.5 px-3';
-              trackGap = 'gap-2';
-              iconSize = 'w-6 h-6';
-              iconSvgSize = 'w-3 h-3';
-              fontSize = 'text-sm';
-              headerSize = 'text-lg';
-              headerMargin = 'mb-3';
-              containerPadding = 'p-5';
-            } else if (trackCount <= 16) {
-              // Taille compacte
-              trackPadding = 'py-1 px-2.5';
-              trackGap = 'gap-1.5';
-              iconSize = 'w-5 h-5';
-              iconSvgSize = 'w-2.5 h-2.5';
-              fontSize = 'text-xs';
-              headerSize = 'text-base';
-              headerMargin = 'mb-2';
-              containerPadding = 'p-4';
-            } else {
-              // Taille très compacte
-              trackPadding = 'py-0.5 px-2';
-              trackGap = 'gap-1';
-              iconSize = 'w-4 h-4';
-              iconSvgSize = 'w-2 h-2';
-              fontSize = 'text-xs';
-              headerSize = 'text-sm';
-              headerMargin = 'mb-2';
-              containerPadding = 'p-3';
-            }
+            const config = sizeConfigs[trackListSize] || sizeConfigs[2];
+            const { trackPadding, trackGap, iconSize, iconSvgSize, fontSize, headerSize, headerMargin, containerPadding } = config;
 
             return (
               <div
