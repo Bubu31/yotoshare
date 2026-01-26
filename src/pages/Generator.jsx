@@ -724,14 +724,14 @@ const CardPreview = forwardRef(function CardPreview(
 
       {/* Badge Archive MYO Studio */}
       <div
-        className="absolute top-5 right-5 flex items-center gap-3 px-4 py-2 rounded-full"
+        className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full"
         style={{
           background: 'rgba(0,0,0,0.4)',
           backdropFilter: 'blur(10px)',
         }}
       >
-        <img src="/myo-studio-badge.svg" alt="MYO Studio" className="w-10 h-10" />
-        <span className="text-white text-base font-semibold">Archive MYO Studio</span>
+        <img src="/myo-studio-badge.svg" alt="MYO Studio" className="w-6 h-6" />
+        <span className="text-white text-sm font-semibold">Archive MYO Studio</span>
       </div>
 
       {/* Contenu */}
@@ -842,7 +842,7 @@ const CardPreview = forwardRef(function CardPreview(
         <div className="flex-1 flex flex-col">
           {/* Titre */}
           <h1
-            className="text-white font-extrabold leading-tight mb-3 pr-56"
+            className="text-white font-extrabold leading-tight mb-3 pr-40"
             style={{
               fontSize: 48,
               textShadow: '0 4px 20px rgba(0,0,0,0.3)',
@@ -877,62 +877,103 @@ const CardPreview = forwardRef(function CardPreview(
           </div>
 
           {/* Liste des pistes */}
-          <div
-            className="flex-1 rounded-3xl p-6 overflow-hidden"
-            style={{
-              background: 'rgba(255,255,255,0.95)',
-              boxShadow: '0 15px 50px rgba(0,0,0,0.2)',
-            }}
-          >
-            <div
-              className="font-bold text-slate-800 text-xl mb-4 flex items-center gap-2"
-              style={{ fontFamily: '"Fredoka One", system-ui' }}
-            >
-              <span>📋</span>
-              <span>Liste des pistes</span>
-            </div>
+          {(() => {
+            // Calcul dynamique des tailles en fonction du nombre de pistes
+            const trackCount = tracks.length;
+            let trackPadding, trackGap, iconSize, iconSvgSize, fontSize, headerSize, headerMargin, containerPadding;
 
-            <div className="space-y-2">
-              {tracks.slice(0, 8).map((track, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
-                  style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
-                >
-                  {/* Icône de la piste */}
-                  <span
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
-                    style={{ background: track.icon ? 'transparent' : accentColor }}
-                  >
-                    {track.icon ? (
-                      <img src={track.icon} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                      </svg>
-                    )}
-                  </span>
-                  {/* Titre */}
-                  <span className="font-semibold text-slate-800 truncate flex-1">
-                    {track.title}
-                  </span>
-                  {/* Durée */}
-                  <span className="text-slate-500 text-sm font-medium shrink-0">
-                    {formatTrackDuration(track.duration)}
-                  </span>
-                </div>
-              ))}
+            if (trackCount <= 8) {
+              // Taille normale
+              trackPadding = 'py-2.5 px-4';
+              trackGap = 'gap-3';
+              iconSize = 'w-8 h-8';
+              iconSvgSize = 'w-4 h-4';
+              fontSize = 'text-base';
+              headerSize = 'text-xl';
+              headerMargin = 'mb-4';
+              containerPadding = 'p-6';
+            } else if (trackCount <= 12) {
+              // Taille moyenne
+              trackPadding = 'py-1.5 px-3';
+              trackGap = 'gap-2';
+              iconSize = 'w-6 h-6';
+              iconSvgSize = 'w-3 h-3';
+              fontSize = 'text-sm';
+              headerSize = 'text-lg';
+              headerMargin = 'mb-3';
+              containerPadding = 'p-5';
+            } else if (trackCount <= 16) {
+              // Taille compacte
+              trackPadding = 'py-1 px-2.5';
+              trackGap = 'gap-1.5';
+              iconSize = 'w-5 h-5';
+              iconSvgSize = 'w-2.5 h-2.5';
+              fontSize = 'text-xs';
+              headerSize = 'text-base';
+              headerMargin = 'mb-2';
+              containerPadding = 'p-4';
+            } else {
+              // Taille très compacte
+              trackPadding = 'py-0.5 px-2';
+              trackGap = 'gap-1';
+              iconSize = 'w-4 h-4';
+              iconSvgSize = 'w-2 h-2';
+              fontSize = 'text-xs';
+              headerSize = 'text-sm';
+              headerMargin = 'mb-2';
+              containerPadding = 'p-3';
+            }
 
-              {tracks.length > 8 && (
+            return (
+              <div
+                className={`flex-1 rounded-3xl ${containerPadding} overflow-hidden flex flex-col`}
+                style={{
+                  background: 'rgba(255,255,255,0.95)',
+                  boxShadow: '0 15px 50px rgba(0,0,0,0.2)',
+                }}
+              >
                 <div
-                  className="flex items-center justify-center px-4 py-2.5 rounded-xl text-slate-500 font-medium"
-                  style={{ background: '#f1f3f4' }}
+                  className={`font-bold text-slate-800 ${headerSize} ${headerMargin} flex items-center gap-2 shrink-0`}
+                  style={{ fontFamily: '"Fredoka One", system-ui' }}
                 >
-                  + {tracks.length - 8} autres pistes...
+                  <span>📋</span>
+                  <span>Liste des pistes</span>
                 </div>
-              )}
-            </div>
-          </div>
+
+                <div className="space-y-1 overflow-hidden flex-1">
+                  {tracks.map((track, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-center ${trackGap} ${trackPadding} rounded-lg`}
+                      style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
+                    >
+                      {/* Icône de la piste */}
+                      <span
+                        className={`${iconSize} rounded-md flex items-center justify-center shrink-0 overflow-hidden`}
+                        style={{ background: track.icon ? 'transparent' : accentColor }}
+                      >
+                        {track.icon ? (
+                          <img src={track.icon} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <svg className={`${iconSvgSize} text-white`} fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                          </svg>
+                        )}
+                      </span>
+                      {/* Titre */}
+                      <span className={`font-semibold text-slate-800 truncate flex-1 ${fontSize}`}>
+                        {track.title}
+                      </span>
+                      {/* Durée */}
+                      <span className={`text-slate-500 ${fontSize} font-medium shrink-0`}>
+                        {formatTrackDuration(track.duration)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
