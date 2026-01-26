@@ -104,6 +104,15 @@ export default function Generator() {
               }
             }
 
+            // Cherche le tag scale (ys:scale:XXX)
+            const scaleTag = allTags.find(t => t.startsWith('ys:scale:'));
+            if (scaleTag) {
+              const savedScale = parseInt(scaleTag.replace('ys:scale:', ''));
+              if (savedScale >= 70 && savedScale <= 130) {
+                setTrackListScale(savedScale);
+              }
+            }
+
             // Détecte les sources depuis les tags
             const sourceValues = SOURCES
               .filter(src => allTags.includes(src.tag))
@@ -217,9 +226,10 @@ export default function Generator() {
       // Combine les tags manuels avec les tags des sources
       const manualTags = tags.split(',').map(t => t.trim()).filter(Boolean);
       const sourceTags = sources.map(s => SOURCES.find(src => src.value === s)?.tag).filter(Boolean);
-      // Ajoute le tag couleur YotoShare (préfixé pour être filtré à l'affichage)
+      // Ajoute les tags YotoShare (préfixés pour être filtrés à l'affichage)
       const colorTag = `ys:color:${accentColor}`;
-      const allTags = [...new Set([colorTag, ...sourceTags, ...manualTags])];
+      const scaleTag = `ys:scale:${trackListScale}`;
+      const allTags = [...new Set([colorTag, scaleTag, ...sourceTags, ...manualTags])];
 
       // Envoie la playlist complète avec les métadonnées mises à jour
       const updatedPlaylist = {
