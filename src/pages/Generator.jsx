@@ -33,7 +33,7 @@ export default function Generator() {
   const [languages, setLanguages] = useState([]);
   const [sources, setSources] = useState([]);
   const [tags, setTags] = useState('');
-  const [trackListSize, setTrackListSize] = useState(2); // 1=très compact, 2=compact, 3=moyen, 4=normal
+  const [trackListScale, setTrackListScale] = useState(100); // Pourcentage de 70% à 130%
 
   const CATEGORIES = [
     { value: 'none', label: 'Aucune' },
@@ -478,19 +478,21 @@ export default function Generator() {
               {/* Taille de la liste */}
               <div className="mb-6">
                 <label className="block text-slate-400 text-sm mb-3">
-                  Taille de la liste ({['Très compact', 'Compact', 'Moyen', 'Normal'][trackListSize - 1]})
+                  Taille de la liste ({trackListScale}%)
                 </label>
                 <input
                   type="range"
-                  min="1"
-                  max="4"
-                  value={trackListSize}
-                  onChange={(e) => setTrackListSize(parseInt(e.target.value))}
+                  min="70"
+                  max="130"
+                  step="5"
+                  value={trackListScale}
+                  onChange={(e) => setTrackListScale(parseInt(e.target.value))}
                   className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
                 />
                 <div className="flex justify-between text-xs text-slate-500 mt-1">
-                  <span>Compact</span>
-                  <span>Normal</span>
+                  <span>70%</span>
+                  <span>100%</span>
+                  <span>130%</span>
                 </div>
               </div>
 
@@ -660,7 +662,7 @@ export default function Generator() {
                 languages={languages}
                 sources={sources}
                 tags={getAllTags()}
-                trackListSize={trackListSize}
+                trackListScale={trackListScale}
                 CATEGORIES={CATEGORIES}
                 LANGUAGES={LANGUAGES}
                 SOURCES={SOURCES}
@@ -693,7 +695,7 @@ function generateGradient(hexColor) {
 }
 
 const CardPreview = forwardRef(function CardPreview(
-  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, sources, tags, trackListSize, CATEGORIES, LANGUAGES, SOURCES },
+  { playlist, tracks, totalDuration, coverUrl, accentColor, selectedPreset, category, genre, languages, sources, tags, trackListScale, CATEGORIES, LANGUAGES, SOURCES },
   ref
 ) {
   // Génère le fond : utilise le preset si la couleur correspond, sinon génère un dégradé
@@ -899,95 +901,86 @@ const CardPreview = forwardRef(function CardPreview(
 
           {/* Liste des pistes */}
           {(() => {
-            // Tailles basées sur le slider (1=très compact, 2=compact, 3=moyen, 4=normal)
-            const sizeConfigs = {
-              1: { // Très compact
-                trackPadding: 'py-0.5 px-2',
-                trackGap: 'gap-1',
-                iconSize: 'w-4 h-4',
-                iconSvgSize: 'w-2 h-2',
-                fontSize: 'text-xs',
-                headerSize: 'text-sm',
-                headerMargin: 'mb-1',
-                containerPadding: 'p-3',
-              },
-              2: { // Compact
-                trackPadding: 'py-1 px-2.5',
-                trackGap: 'gap-1.5',
-                iconSize: 'w-5 h-5',
-                iconSvgSize: 'w-2.5 h-2.5',
-                fontSize: 'text-xs',
-                headerSize: 'text-base',
-                headerMargin: 'mb-2',
-                containerPadding: 'p-4',
-              },
-              3: { // Moyen
-                trackPadding: 'py-1.5 px-3',
-                trackGap: 'gap-2',
-                iconSize: 'w-6 h-6',
-                iconSvgSize: 'w-3 h-3',
-                fontSize: 'text-sm',
-                headerSize: 'text-lg',
-                headerMargin: 'mb-3',
-                containerPadding: 'p-5',
-              },
-              4: { // Normal
-                trackPadding: 'py-2.5 px-4',
-                trackGap: 'gap-3',
-                iconSize: 'w-8 h-8',
-                iconSvgSize: 'w-4 h-4',
-                fontSize: 'text-base',
-                headerSize: 'text-xl',
-                headerMargin: 'mb-4',
-                containerPadding: 'p-6',
-              },
+            // Tailles calculées dynamiquement basées sur le pourcentage (70-130%)
+            const scale = trackListScale / 100;
+            const sizes = {
+              fontSize: Math.round(12 * scale),        // 12px à 100%
+              headerSize: Math.round(18 * scale),      // 18px à 100%
+              iconSize: Math.round(22 * scale),        // 22px à 100%
+              iconSvgSize: Math.round(11 * scale),     // 11px à 100%
+              paddingY: Math.round(6 * scale),         // 6px à 100%
+              paddingX: Math.round(10 * scale),        // 10px à 100%
+              gap: Math.round(6 * scale),              // 6px à 100%
+              containerPadding: Math.round(16 * scale), // 16px à 100%
+              headerMargin: Math.round(10 * scale),    // 10px à 100%
             };
-
-            const config = sizeConfigs[trackListSize] || sizeConfigs[2];
-            const { trackPadding, trackGap, iconSize, iconSvgSize, fontSize, headerSize, headerMargin, containerPadding } = config;
 
             return (
               <div
-                className={`flex-1 rounded-3xl ${containerPadding} overflow-hidden flex flex-col`}
+                className="flex-1 rounded-3xl overflow-hidden flex flex-col"
                 style={{
                   background: 'rgba(255,255,255,0.95)',
                   boxShadow: '0 15px 50px rgba(0,0,0,0.2)',
+                  padding: `${sizes.containerPadding}px`,
                 }}
               >
                 <div
-                  className={`font-bold text-slate-800 ${headerSize} ${headerMargin} flex items-center gap-2 shrink-0`}
-                  style={{ fontFamily: '"Fredoka One", system-ui' }}
+                  className="font-bold text-slate-800 flex items-center gap-2 shrink-0"
+                  style={{
+                    fontFamily: '"Fredoka One", system-ui',
+                    fontSize: `${sizes.headerSize}px`,
+                    marginBottom: `${sizes.headerMargin}px`,
+                  }}
                 >
                   <span>📋</span>
                   <span>Liste des pistes</span>
                 </div>
 
-                <div className="space-y-1 overflow-hidden flex-1">
+                <div className="overflow-hidden flex-1" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {tracks.map((track, i) => (
                     <div
                       key={i}
-                      className={`flex items-center ${trackGap} ${trackPadding} rounded-lg`}
-                      style={{ background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4' }}
+                      className="flex items-center rounded-lg"
+                      style={{
+                        background: i % 2 === 0 ? '#f8f9fa' : '#f1f3f4',
+                        gap: `${sizes.gap}px`,
+                        padding: `${sizes.paddingY}px ${sizes.paddingX}px`,
+                      }}
                     >
                       {/* Icône de la piste */}
                       <span
-                        className={`${iconSize} rounded-md flex items-center justify-center shrink-0 overflow-hidden`}
-                        style={{ background: track.icon ? 'transparent' : accentColor }}
+                        className="rounded-md flex items-center justify-center shrink-0 overflow-hidden"
+                        style={{
+                          width: `${sizes.iconSize}px`,
+                          height: `${sizes.iconSize}px`,
+                          background: track.icon ? 'transparent' : accentColor,
+                        }}
                       >
                         {track.icon ? (
                           <img src={track.icon} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <svg className={`${iconSvgSize} text-white`} fill="currentColor" viewBox="0 0 24 24">
+                          <svg
+                            style={{ width: `${sizes.iconSvgSize}px`, height: `${sizes.iconSvgSize}px` }}
+                            className="text-white"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
                             <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
                           </svg>
                         )}
                       </span>
                       {/* Titre */}
-                      <span className={`font-semibold text-slate-800 truncate flex-1 ${fontSize}`}>
+                      <span
+                        className="font-semibold text-slate-800 truncate flex-1"
+                        style={{ fontSize: `${sizes.fontSize}px` }}
+                      >
                         {track.title}
                       </span>
                       {/* Durée */}
-                      <span className={`text-slate-500 ${fontSize} font-medium shrink-0`}>
+                      <span
+                        className="text-slate-500 font-medium shrink-0"
+                        style={{ fontSize: `${sizes.fontSize}px` }}
+                      >
                         {formatTrackDuration(track.duration)}
                       </span>
                     </div>
