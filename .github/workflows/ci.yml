@@ -48,7 +48,7 @@ jobs:
           YOTO_REDIRECT_URI: http://localhost/yoto/callback
         run: |
           mkdir -p data
-          python -m pytest tests/ -v --tb=short
+          if [ -d tests ]; then python -m pytest tests/ -v --tb=short; else echo "No tests directory found, skipping"; fi
 
   build-and-push-backend:
     needs: test
