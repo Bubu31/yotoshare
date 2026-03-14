@@ -18,8 +18,6 @@ const SCOPES = [
   { key: 'ages', label: 'Âges' },
   { key: 'users', label: 'Utilisateurs' },
   { key: 'roles', label: 'Rôles' },
-  { key: 'visuals', label: 'Visuels' },
-  { key: 'visual_themes', label: 'Thèmes visuels' },
   { key: 'discord', label: 'Discord' },
   { key: 'packs', label: 'Packs' },
 ]

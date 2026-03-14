@@ -23,7 +23,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['edit', 'delete', 'publish', 'share', 'add-to-gallery', 'add-icons-to-gallery', 'toggle-select'])
+const emit = defineEmits(['edit', 'delete', 'publish', 'share', 'toggle-select'])
 
 function handleCardClick() {
   if (props.selectionMode) {
@@ -165,22 +165,6 @@ const isPublished = computed(() => !!props.archive.discord_post_id)
               <i class="fab fa-discord"></i>
               <i class="fas fa-check ml-1"></i>
             </span>
-            <button
-              v-if="coverUrl && authStore.hasPermission('visuals', 'modify')"
-              @click="emit('add-to-gallery', archive)"
-              class="btn btn-secondary text-sm"
-              title="Ajouter la cover à la galerie"
-            >
-              <i class="fas fa-images"></i>
-            </button>
-            <button
-              v-if="authStore.hasPermission('visuals', 'modify')"
-              @click="emit('add-icons-to-gallery', archive)"
-              class="btn btn-secondary text-sm"
-              title="Ajouter les icônes à la galerie"
-            >
-              <i class="fas fa-icons"></i>
-            </button>
             <button
               @click="emit('share', archive)"
               class="btn btn-secondary text-sm"

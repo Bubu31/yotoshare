@@ -3,7 +3,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArchivesStore } from '../stores/archives'
 import { useAuthStore } from '../stores/auth'
-import { useVisualsStore } from '../stores/visuals'
 import { useMessage } from '../composables/useMessage'
 import api from '../services/api'
 import ArchiveCard from '../components/ArchiveCard.vue'
@@ -11,12 +10,9 @@ import AlertMessage from '../components/AlertMessage.vue'
 import PublishModal from '../components/PublishModal.vue'
 import BulkUploadModal from '../components/BulkUploadModal.vue'
 import CreatePackModal from '../components/CreatePackModal.vue'
-import ThemeAutocomplete from '../components/ThemeAutocomplete.vue'
-
 const router = useRouter()
 const archivesStore = useArchivesStore()
 const authStore = useAuthStore()
-const visualsStore = useVisualsStore()
 const { message, showMessage } = useMessage()
 
 const selectedArchive = ref(null)
@@ -69,20 +65,6 @@ function handlePackCreated() {
   selectionMode.value = false
   selectedIds.value = new Set()
 }
-
-// Add to gallery modal
-const showGalleryModal = ref(false)
-const galleryArchive = ref(null)
-const galleryAuthor = ref(localStorage.getItem('visual_submitter') || '')
-const galleryThemeIds = ref([])
-const galleryLoading = ref(false)
-
-// Add icons to gallery modal
-const showIconGalleryModal = ref(false)
-const iconGalleryArchive = ref(null)
-const iconGalleryAuthor = ref(localStorage.getItem('visual_submitter') || '')
-const iconGalleryItems = ref([])
-const iconGalleryLoading = ref(false)
 
 const searchQuery = ref('')
 const sortBy = ref(localStorage.getItem('archives_sortBy') || 'date-desc')
@@ -143,7 +125,6 @@ onMounted(async () => {
     archivesStore.fetchCategories(),
     archivesStore.fetchAges(),
     archivesStore.fetchArchives(filterCategory.value || null, filterAge.value || null),
-    visualsStore.fetchThemes(),
   ])
 })
 
@@ -225,147 +206,6 @@ async function handleBulkUploadComplete() {
   showMessage('success', 'Import en masse terminé')
 }
 
-function handleAddToGallery(archive) {
-  galleryArchive.value = archive
-  galleryAuthor.value = localStorage.getItem('visual_submitter') || ''
-  galleryThemeIds.value = []
-  showGalleryModal.value = true
-}
-
-function closeGalleryModal() {
-  showGalleryModal.value = false
-  galleryArchive.value = null
-  galleryThemeIds.value = []
-}
-
-async function confirmAddToGallery() {
-  if (!galleryArchive.value?.cover_path) return
-  galleryLoading.value = true
-  try {
-    const coverUrl = `/api/archives/cover/${galleryArchive.value.cover_path}`
-    const response = await fetch(coverUrl)
-    const blob = await response.blob()
-    const file = new File([blob], `${galleryArchive.value.title || 'cover'}.jpg`, { type: blob.type })
-
-    const formData = new FormData()
-    formData.append('image', file)
-    formData.append('title', galleryArchive.value.title || '')
-    if (galleryAuthor.value.trim()) {
-      formData.append('author', galleryAuthor.value.trim())
-      localStorage.setItem('visual_submitter', galleryAuthor.value.trim())
-    }
-    if (galleryThemeIds.value.length) {
-      formData.append('theme_ids', galleryThemeIds.value.join(','))
-    }
-
-    await visualsStore.uploadVisual(formData)
-    closeGalleryModal()
-    showMessage('success', 'Visuel ajouté à la galerie')
-  } catch (e) {
-    showMessage('error', e.response?.data?.detail || 'Erreur lors de l\'ajout à la galerie')
-  } finally {
-    galleryLoading.value = false
-  }
-}
-
-async function onGalleryThemeCreated(name) {
-  try {
-    const theme = await visualsStore.getOrCreateTheme(name)
-    galleryThemeIds.value = [...galleryThemeIds.value, theme.id]
-  } catch (e) {
-    showMessage('error', 'Erreur lors de la création du thème')
-  }
-}
-
-async function handleAddIconsToGallery(archive) {
-  iconGalleryArchive.value = archive
-  iconGalleryAuthor.value = localStorage.getItem('visual_submitter') || ''
-  iconGalleryItems.value = []
-  iconGalleryLoading.value = true
-  showIconGalleryModal.value = true
-
-  try {
-    const response = await api.get(`/api/archives/${archive.id}/content`)
-    const chapters = response.data.chapters || []
-    iconGalleryItems.value = chapters
-      .filter(ch => ch.icon_file)
-      .map(ch => ({
-        chapterKey: ch.key,
-        title: ch.title || ch.key,
-        keywords: '',
-        included: true,
-      }))
-  } catch (e) {
-    showMessage('error', 'Erreur lors du chargement des chapitres')
-    showIconGalleryModal.value = false
-  } finally {
-    iconGalleryLoading.value = false
-  }
-}
-
-function closeIconGalleryModal() {
-  showIconGalleryModal.value = false
-  iconGalleryArchive.value = null
-  iconGalleryItems.value = []
-}
-
-function toggleIconIncluded(index) {
-  iconGalleryItems.value[index].included = !iconGalleryItems.value[index].included
-}
-
-const includedIconCount = computed(() => iconGalleryItems.value.filter(i => i.included).length)
-
-async function confirmAddIconsToGallery() {
-  const items = iconGalleryItems.value.filter(i => i.included)
-  if (!items.length) return
-
-  iconGalleryLoading.value = true
-  let successCount = 0
-
-  try {
-    if (iconGalleryAuthor.value.trim()) {
-      localStorage.setItem('visual_submitter', iconGalleryAuthor.value.trim())
-    }
-
-    for (const item of items) {
-      try {
-        const iconUrl = `/api/archives/${iconGalleryArchive.value.id}/chapters/${item.chapterKey}/icon`
-        const response = await fetch(iconUrl)
-        if (!response.ok) continue
-
-        const blob = await response.blob()
-        const file = new File([blob], `${item.title}.png`, { type: 'image/png' })
-
-        const formData = new FormData()
-        formData.append('image', file)
-        formData.append('type', 'icon')
-        formData.append('title', item.title)
-        if (iconGalleryAuthor.value.trim()) {
-          formData.append('author', iconGalleryAuthor.value.trim())
-        }
-        if (item.keywords.trim()) {
-          formData.append('keywords', item.keywords.trim())
-        }
-
-        await visualsStore.uploadVisual(formData)
-        successCount++
-      } catch (e) {
-        console.error(`[IconGallery] Failed to upload icon for ${item.chapterKey}:`, e)
-      }
-    }
-
-    closeIconGalleryModal()
-    if (successCount > 0) {
-      showMessage('success', `${successCount} icône${successCount > 1 ? 's' : ''} ajoutée${successCount > 1 ? 's' : ''} à la galerie`)
-    } else {
-      showMessage('error', 'Aucune icône n\'a pu être ajoutée')
-    }
-  } catch (e) {
-    showMessage('error', 'Erreur lors de l\'ajout des icônes')
-  } finally {
-    iconGalleryLoading.value = false
-  }
-}
 
 </script>
 
@@ -481,8 +321,6 @@ async function confirmAddIconsToGallery() {
           @delete="handleDelete"
           @share="handleShare"
           @publish="handlePublish"
-          @add-to-gallery="handleAddToGallery"
-          @add-icons-to-gallery="handleAddIconsToGallery"
           @toggle-select="toggleSelect"
         />
       </div>
@@ -596,225 +434,5 @@ async function confirmAddIconsToGallery() {
       </div>
     </Teleport>
 
-    <!-- Add to Gallery Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showGalleryModal && galleryArchive"
-        class="fixed inset-0 z-50 flex items-center justify-center"
-      >
-        <div class="absolute inset-0 bg-black bg-opacity-50" @click="closeGalleryModal"></div>
-
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-          <button
-            @click="closeGalleryModal"
-            class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <i class="fas fa-times"></i>
-          </button>
-
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-            <i class="fas fa-images text-primary-600 mr-2"></i>
-            Ajouter à la galerie
-          </h3>
-
-          <!-- Cover preview -->
-          <div class="rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 mb-4 flex justify-center">
-            <img
-              :src="`/api/archives/cover/${galleryArchive.cover_path}`"
-              :alt="galleryArchive.title"
-              class="max-h-64 object-contain"
-            />
-          </div>
-
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Le visuel de <strong>{{ galleryArchive.title }}</strong> sera ajouté directement à la galerie.
-          </p>
-
-          <!-- Author -->
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Pseudo du créateur
-            </label>
-            <input
-              v-model="galleryAuthor"
-              type="text"
-              class="input w-full"
-              placeholder="Créateur du visuel..."
-              maxlength="100"
-            />
-          </div>
-
-          <!-- Themes -->
-          <div class="mb-4 overflow-visible">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Thèmes
-            </label>
-            <ThemeAutocomplete
-              v-model="galleryThemeIds"
-              :themes="visualsStore.visualThemes"
-              @theme-created="onGalleryThemeCreated"
-            />
-          </div>
-
-          <!-- Actions -->
-          <div class="flex gap-3">
-            <button
-              @click="confirmAddToGallery"
-              :disabled="galleryLoading"
-              class="btn btn-primary flex-1"
-            >
-              <i :class="galleryLoading ? 'fas fa-spinner fa-spin' : 'fas fa-plus'" class="mr-2"></i>
-              {{ galleryLoading ? 'Ajout...' : 'Ajouter' }}
-            </button>
-            <button @click="closeGalleryModal" class="btn btn-secondary">
-              Annuler
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Add Icons to Gallery Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showIconGalleryModal && iconGalleryArchive"
-        class="fixed inset-0 z-50 flex items-center justify-center"
-      >
-        <div class="absolute inset-0 bg-black bg-opacity-50" @click="closeIconGalleryModal"></div>
-
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-          <button
-            @click="closeIconGalleryModal"
-            class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <i class="fas fa-times"></i>
-          </button>
-
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-            <i class="fas fa-icons text-primary-600 mr-2"></i>
-            Ajouter les icônes à la galerie
-          </h3>
-
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Icônes des chapitres de <strong>{{ iconGalleryArchive.title }}</strong>
-          </p>
-
-          <!-- Author -->
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Pseudo du créateur
-            </label>
-            <input
-              v-model="iconGalleryAuthor"
-              type="text"
-              class="input w-full"
-              placeholder="Créateur des icônes..."
-              maxlength="100"
-            />
-          </div>
-
-          <!-- Loading -->
-          <div v-if="iconGalleryLoading && iconGalleryItems.length === 0" class="text-center py-8">
-            <i class="fas fa-spinner fa-spin text-3xl text-primary-600"></i>
-            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Chargement des chapitres...</p>
-          </div>
-
-          <!-- No icons found -->
-          <div v-else-if="iconGalleryItems.length === 0" class="text-center py-8">
-            <i class="fas fa-image text-4xl text-gray-300 dark:text-gray-600"></i>
-            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Aucun chapitre avec icône trouvé</p>
-          </div>
-
-          <!-- Icons grid -->
-          <div v-else class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-            <div
-              v-for="(item, index) in iconGalleryItems"
-              :key="item.chapterKey"
-              class="relative rounded-lg border dark:border-gray-700 overflow-hidden transition-opacity"
-              :class="item.included ? 'opacity-100' : 'opacity-40'"
-            >
-              <!-- Exclude/include toggle -->
-              <button
-                @click="toggleIconIncluded(index)"
-                class="absolute top-1 right-1 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-colors"
-                :class="item.included
-                  ? 'bg-red-500/80 text-white hover:bg-red-600'
-                  : 'bg-green-500/80 text-white hover:bg-green-600'"
-                :title="item.included ? 'Exclure' : 'Réinclure'"
-              >
-                <i :class="item.included ? 'fas fa-times' : 'fas fa-plus'" class="text-[10px]"></i>
-              </button>
-
-              <!-- Icon preview -->
-              <div class="aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center p-2 checkerboard-sm">
-                <img
-                  :src="`/api/archives/${iconGalleryArchive.id}/chapters/${item.chapterKey}/icon`"
-                  :alt="item.title"
-                  class="w-8 h-8 icon-pixelated"
-                  loading="lazy"
-                />
-              </div>
-
-              <!-- Chapter info -->
-              <div class="p-2">
-                <p class="text-[11px] text-gray-700 dark:text-gray-300 truncate mb-1" :title="item.title">
-                  {{ item.title }}
-                </p>
-                <input
-                  v-model="item.keywords"
-                  type="text"
-                  class="w-full text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                  placeholder="Mots-clés..."
-                  :disabled="!item.included"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div v-if="iconGalleryItems.length > 0" class="flex items-center gap-3">
-            <button
-              @click="confirmAddIconsToGallery"
-              :disabled="iconGalleryLoading || includedIconCount === 0"
-              class="btn btn-primary flex-1"
-            >
-              <i :class="iconGalleryLoading ? 'fas fa-spinner fa-spin' : 'fas fa-plus'" class="mr-2"></i>
-              {{ iconGalleryLoading ? 'Ajout en cours...' : `Ajouter ${includedIconCount} icône${includedIconCount > 1 ? 's' : ''}` }}
-            </button>
-            <button @click="closeIconGalleryModal" class="btn btn-secondary" :disabled="iconGalleryLoading">
-              Annuler
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
-
-<style scoped>
-.checkerboard-sm {
-  background-image:
-    linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
-    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
-    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
-  background-size: 12px 12px;
-  background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
-  background-color: #fff;
-}
-
-:root.dark .checkerboard-sm,
-.dark .checkerboard-sm {
-  background-image:
-    linear-gradient(45deg, #374151 25%, transparent 25%),
-    linear-gradient(-45deg, #374151 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #374151 75%),
-    linear-gradient(-45deg, transparent 75%, #374151 75%);
-  background-color: #1f2937;
-}
-
-.icon-pixelated {
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-}
-</style>
