@@ -20,9 +20,6 @@ settings = get_settings()
 def ensure_directories():
     os.makedirs(settings.archives_path, exist_ok=True)
     os.makedirs(settings.covers_path, exist_ok=True)
-    os.makedirs(settings.visuals_path, exist_ok=True)
-    os.makedirs(settings.thumbnails_path, exist_ok=True)
-    os.makedirs(settings.icons_path, exist_ok=True)
 
 
 async def save_archive(file: UploadFile) -> tuple[str, int]:
