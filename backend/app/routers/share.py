@@ -102,6 +102,7 @@ body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-co
 {"<p class='author'>" + author + "</p>" if author else ""}
 {"<p class='desc'>" + description + "</p>" if description else ""}
 <a href="{download_url}" class="btn">Télécharger</a>
+<p style="margin-top:2rem;font-size:0.85rem;color:#888;"><a href="/submit" style="color:#0ea5e9;text-decoration:none;">Vous aussi, partagez vos créations &rarr;</a></p>
 </div>
 </body>
 </html>""")

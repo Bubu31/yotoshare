@@ -18,6 +18,7 @@ from app.routers import (
     share_router,
     roles_router,
     packs_router,
+    submissions_router,
 )
 from app.services.discord_bot import run_bot_in_background
 from app.config import get_settings
@@ -61,6 +62,7 @@ app.include_router(users_router)
 app.include_router(share_router)
 app.include_router(roles_router)
 app.include_router(packs_router)
+app.include_router(submissions_router)
 
 
 @app.get("/api/health")

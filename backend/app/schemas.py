@@ -288,6 +288,38 @@ class WaveformResponse(BaseModel):
 
 
 # Pack schemas
+# Submission schemas
+class SubmissionResponse(BaseModel):
+    id: int
+    pseudonym: Optional[str] = None
+    title: Optional[str] = None
+    cover_path: Optional[str] = None
+    archive_path: str
+    file_size: int = 0
+    total_duration: Optional[int] = None
+    chapters_count: Optional[int] = None
+    chapters_data: Optional[str] = None
+    status: str = "pending"
+    reviewer_id: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+
+    @field_validator("total_duration", mode="before")
+    @classmethod
+    def coerce_duration_to_int(cls, v):
+        return int(v) if v is not None else None
+
+    class Config:
+        from_attributes = True
+
+
+class SubmissionReviewRequest(BaseModel):
+    action: str  # "approve" or "reject"
+    rejection_reason: Optional[str] = None
+
+
+# Pack schemas
 class PackCreate(BaseModel):
     name: str
     description: Optional[str] = None

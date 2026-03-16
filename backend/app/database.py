@@ -166,7 +166,7 @@ def run_migrations():
 
         # Seed default roles if they don't exist
         import json
-        all_scopes = ["archives", "categories", "ages", "users", "roles", "discord", "packs"]
+        all_scopes = ["archives", "categories", "ages", "users", "roles", "discord", "packs", "submissions"]
 
         # Admin: all permissions
         admin_perms = {scope: {"access": True, "modify": True, "delete": True} for scope in all_scopes}
@@ -317,6 +317,57 @@ def run_migrations():
             conn.commit()
         except Exception as e:
             logger.debug("Index ix_packs_discord_post_id already exists or error: %s", e)
+            conn.rollback()
+
+        # Create submissions table
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pseudonym VARCHAR(255),
+                    title VARCHAR(255),
+                    cover_path VARCHAR(500),
+                    archive_path VARCHAR(500) NOT NULL,
+                    file_size INTEGER DEFAULT 0,
+                    total_duration INTEGER,
+                    chapters_count INTEGER,
+                    chapters_data TEXT,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    reviewer_id INTEGER REFERENCES users(id),
+                    reviewed_at DATETIME,
+                    rejection_reason TEXT,
+                    submitter_ip VARCHAR(45),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_submissions_status ON submissions (status)"))
+            conn.commit()
+            logger.info("Ensured submissions table exists")
+        except Exception as e:
+            logger.error("Error creating submissions table: %s", e)
+            conn.rollback()
+
+        # Add submissions scope to existing roles
+        try:
+            rows = conn.execute(text("SELECT id, name, permissions FROM roles")).fetchall()
+            for role_id, role_name, perms_json in rows:
+                try:
+                    perms = json.loads(perms_json) if perms_json else {}
+                except (json.JSONDecodeError, TypeError):
+                    perms = {}
+                if "submissions" not in perms:
+                    if role_name == "Admin":
+                        perms["submissions"] = {"access": True, "modify": True, "delete": True}
+                    else:
+                        perms["submissions"] = {"access": True, "modify": True, "delete": False}
+                    conn.execute(
+                        text("UPDATE roles SET permissions = :perms WHERE id = :rid"),
+                        {"perms": json.dumps(perms), "rid": role_id}
+                    )
+            conn.commit()
+            logger.info("Ensured submissions scope exists in all roles")
+        except Exception as e:
+            logger.error("Error adding submissions scope to roles: %s", e)
             conn.rollback()
 
         # Migrate existing users: map role string to role_id

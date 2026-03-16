@@ -66,6 +66,23 @@ const routes = [
     meta: { requiresAuth: true, requiredPermission: { scope: 'roles', action: 'access' } },
   },
   {
+    path: '/submit',
+    name: 'submit',
+    component: () => import('../views/SubmitView.vue'),
+  },
+  {
+    path: '/admin/submissions',
+    name: 'submissions',
+    component: () => import('../views/SubmissionsView.vue'),
+    meta: { requiresAuth: true, requiredPermission: { scope: 'submissions', action: 'access' } },
+  },
+  {
+    path: '/admin/submissions/:id',
+    name: 'submission-review',
+    component: () => import('../views/SubmissionReviewView.vue'),
+    meta: { requiresAuth: true, requiredPermission: { scope: 'submissions', action: 'access' } },
+  },
+  {
     path: '/dmca',
     name: 'dmca',
     component: () => import('../views/DmcaView.vue'),
