@@ -290,8 +290,8 @@ async def get_submission_icon(
             if icon_filename and icon_filename.startswith("yoto:"):
                 icon_filename = None
 
-            # Find icon files in the ZIP
-            icon_entries = [n for n in namelist if "/icons/" in n and n.lower().endswith((".png", ".jpg", ".jpeg"))]
+            # Find icon files in the ZIP (icons/ at root or nested like folder/icons/)
+            icon_entries = [n for n in namelist if ("icons/" in n) and n.lower().endswith((".png", ".jpg", ".jpeg"))]
             icon_entries.sort()
 
             # Try to match by card-data filename
