@@ -129,7 +129,7 @@ function reset() {
           <span class="text-2xl font-extrabold bg-gradient-to-r from-indigo-500 to-cyan-500 bg-clip-text text-transparent">YotoShare</span>
         </div>
         <h1 class="text-xl font-bold text-gray-800 dark:text-white mt-2">Soumettre une archive</h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Partagez votre archive MYO Studio avec la communauté</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Partagez votre archive MYO avec la communauté</p>
       </div>
 
       <!-- Success state -->

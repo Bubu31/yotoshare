@@ -77,7 +77,7 @@ async def create_submission(
         storage.delete_archive(filename)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Archive invalide : pas de card-data.json trouvé. Seules les archives MYO Studio sont acceptées.",
+            detail="Archive invalide : pas de card-data.json trouvé. Seules les archives MYO sont acceptées.",
         )
 
     # Save cover thumbnail if present
