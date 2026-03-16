@@ -145,7 +145,6 @@ async def get_submission(
 async def get_submission_cover(
     submission_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_permission("submissions", "access")),
 ):
     """Get submission cover image."""
     submission = db.query(Submission).filter(Submission.id == submission_id).first()
@@ -250,7 +249,6 @@ async def get_submission_icon(
     submission_id: int,
     chapter_key: str,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_permission("submissions", "access")),
 ):
     """Get a chapter's icon from a submission."""
     submission = db.query(Submission).filter(Submission.id == submission_id).first()
