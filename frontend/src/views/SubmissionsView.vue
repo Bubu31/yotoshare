@@ -5,7 +5,7 @@ import { useMessage } from '../composables/useMessage'
 import api from '../services/api'
 
 const router = useRouter()
-const { showError } = useMessage()
+const { showMessage } = useMessage()
 
 const submissions = ref([])
 const loading = ref(true)
@@ -35,7 +35,7 @@ async function fetchSubmissions() {
     const { data } = await api.get('/api/submissions')
     submissions.value = data
   } catch (e) {
-    showError(e.response?.data?.detail || 'Erreur lors du chargement')
+    showMessage('error', e.response?.data?.detail || 'Erreur lors du chargement')
   } finally {
     loading.value = false
   }

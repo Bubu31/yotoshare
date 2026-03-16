@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="message.text"
+    v-if="message?.text"
     :class="[
       'mb-6 px-4 py-3 rounded-lg',
       message.type === 'success' ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' :

@@ -6,7 +6,7 @@ import api from '../services/api'
 
 const route = useRoute()
 const router = useRouter()
-const { showSuccess, showError } = useMessage()
+const { showMessage } = useMessage()
 
 const submission = ref(null)
 const content = ref(null)
@@ -27,7 +27,7 @@ async function loadSubmission() {
     const { data } = await api.get(`/api/submissions/${route.params.id}`)
     submission.value = data
   } catch (e) {
-    showError(e.response?.data?.detail || 'Erreur lors du chargement')
+    showMessage('error',e.response?.data?.detail || 'Erreur lors du chargement')
     loading.value = false
     return
   }
@@ -80,10 +80,10 @@ async function approve() {
     const { data } = await api.post(`/api/submissions/${route.params.id}/review`, {
       action: 'approve',
     })
-    showSuccess(data.message)
+    showMessage('success',data.message)
     router.push('/admin/submissions')
   } catch (e) {
-    showError(e.response?.data?.detail || "Erreur lors de l'approbation")
+    showMessage('error',e.response?.data?.detail || "Erreur lors de l'approbation")
   } finally {
     processing.value = false
   }
@@ -96,11 +96,11 @@ async function reject() {
       action: 'reject',
       rejection_reason: rejectionReason.value || null,
     })
-    showSuccess(data.message)
+    showMessage('success',data.message)
     showRejectModal.value = false
     router.push('/admin/submissions')
   } catch (e) {
-    showError(e.response?.data?.detail || 'Erreur lors du rejet')
+    showMessage('error',e.response?.data?.detail || 'Erreur lors du rejet')
   } finally {
     processing.value = false
   }
