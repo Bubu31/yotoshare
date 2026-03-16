@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+import zipfile
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -260,10 +261,66 @@ async def get_submission_icon(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 
     try:
-        icon_data = archive_editor.get_chapter_icon(archive_path, chapter_key)
-        if not icon_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
-        return Response(content=icon_data, media_type="image/png")
+        # Read icon directly from ZIP without extracting everything
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            namelist = zf.namelist()
+
+            # Find card-data.json to get the icon filename for this chapter
+            card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
+            if not card_data_paths:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+
+            with zf.open(card_data_paths[0]) as f:
+                card_data = json.load(f)
+
+            chapters = card_data.get("content", {}).get("chapters", [])
+            chapter = None
+            chapter_index = None
+            for i, ch in enumerate(chapters):
+                if ch.get("key") == chapter_key:
+                    chapter = ch
+                    chapter_index = i
+                    break
+
+            if chapter is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+
+            # Try to get icon filename from card-data
+            icon_filename = chapter.get("display", {}).get("icon16x16") if chapter.get("display") else None
+            if icon_filename and icon_filename.startswith("yoto:"):
+                icon_filename = None
+
+            # Find icon files in the ZIP
+            icon_entries = [n for n in namelist if "/icons/" in n and n.lower().endswith((".png", ".jpg", ".jpeg"))]
+            icon_entries.sort()
+
+            # Try to match by card-data filename
+            matched_entry = None
+            if icon_filename:
+                for entry in icon_entries:
+                    if entry.endswith(f"/{icon_filename}") or entry.endswith(f"\\{icon_filename}"):
+                        matched_entry = entry
+                        break
+
+            # Try to match by chapter_key prefix
+            if not matched_entry:
+                for entry in icon_entries:
+                    basename = entry.split("/")[-1]
+                    if basename.startswith(f"{chapter_key}-") or basename.startswith(f"{chapter_key} -"):
+                        matched_entry = entry
+                        break
+
+            # Fallback: match by index
+            if not matched_entry and chapter_index is not None and chapter_index < len(icon_entries):
+                matched_entry = icon_entries[chapter_index]
+
+            if not matched_entry:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+
+            icon_data = zf.read(matched_entry)
+            media_type = "image/png" if matched_entry.lower().endswith(".png") else "image/jpeg"
+            return Response(content=icon_data, media_type=media_type)
+
     except HTTPException:
         raise
     except Exception as e:
