@@ -138,7 +138,7 @@ const statusColors = {
         <div class="aspect-[4/3] bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
           <img
             v-if="sub.cover_path"
-            :src="`/api/submissions/${sub.id}/cover`"
+            :src="`/api/archives/cover/${sub.cover_path}`"
             :alt="sub.title"
             class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           >

@@ -127,7 +127,7 @@ async function reject() {
             <div class="aspect-[3/4] bg-gray-100 dark:bg-gray-800">
               <img
                 v-if="submission.cover_path"
-                :src="`/api/submissions/${submission.id}/cover`"
+                :src="`/api/archives/cover/${submission.cover_path}`"
                 :alt="submission.title"
                 class="w-full h-full object-cover"
               >
