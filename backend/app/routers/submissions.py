@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import List, Optional
 
 from app.database import get_db
 from app.models import Submission, Archive
@@ -24,7 +24,7 @@ settings = get_settings()
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 
 # In-memory rate limiting
-_rate: dict[str, list[float]] = defaultdict(list)
+_rate = defaultdict(list)  # ip -> [timestamps]
 MAX_PER_HOUR = 5
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
 
@@ -105,7 +105,7 @@ async def create_submission(
     return {"message": "Votre archive a été soumise et sera examinée par un modérateur. Merci !"}
 
 
-@router.get("", response_model=list[SubmissionResponse])
+@router.get("", response_model=List[SubmissionResponse])
 async def list_submissions(
     status_filter: Optional[str] = None,
     db: Session = Depends(get_db),
