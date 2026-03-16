@@ -160,7 +160,7 @@ async def on_interaction(interaction: discord.Interaction):
                 )
                 return
 
-            token, expires_at = create_download_token(db, archive_id, str(interaction.user.id))
+            token, expires_at = create_download_token(db, archive_id, str(interaction.user.id), reusable=True)
             download_url = get_download_url(token)
 
             # Build embed with archive info
