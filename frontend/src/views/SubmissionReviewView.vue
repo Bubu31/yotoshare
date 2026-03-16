@@ -24,17 +24,20 @@ onMounted(async () => {
 async function loadSubmission() {
   loading.value = true
   try {
-    const [subRes, contentRes] = await Promise.all([
-      api.get(`/api/submissions/${route.params.id}`),
-      api.get(`/api/submissions/${route.params.id}/content`),
-    ])
-    submission.value = subRes.data
-    content.value = contentRes.data
+    const { data } = await api.get(`/api/submissions/${route.params.id}`)
+    submission.value = data
   } catch (e) {
     showError(e.response?.data?.detail || 'Erreur lors du chargement')
-  } finally {
     loading.value = false
+    return
   }
+  try {
+    const { data } = await api.get(`/api/submissions/${route.params.id}/content`)
+    content.value = data
+  } catch (e) {
+    // Content may fail but submission info still shows
+  }
+  loading.value = false
 }
 
 function formatSize(bytes) {
