@@ -18,7 +18,7 @@ services:
     build: ./backend
     container_name: yotoshare-backend
     environment:
-      - DATABASE_URL=sqlite:///./data/yotoshare.db
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/yotoshare.db}
     env_file:
       - .env
     volumes:
@@ -27,6 +27,7 @@ services:
     restart: unless-stopped
     networks:
       - yotoshare-network
+      - traefik-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 30s
@@ -76,3 +77,5 @@ services:
 networks:
   yotoshare-network:
     driver: bridge
+  traefik-net:
+    external: true
