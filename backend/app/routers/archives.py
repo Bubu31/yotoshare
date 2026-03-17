@@ -194,6 +194,14 @@ async def generate_grid_visual(
     )
 
 
+@router.get("/cover/{filename}")
+async def get_cover(filename: str):
+    filepath = storage.get_cover_path(filename)
+    if not filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found")
+    return FileResponse(filepath, media_type="image/jpeg")
+
+
 @router.get("/{archive_id}", response_model=ArchiveResponse)
 async def get_archive(archive_id: int, db: Session = Depends(get_db)):
     archive = db.query(Archive).filter(Archive.id == archive_id).first()
@@ -446,14 +454,6 @@ async def delete_archive(
 
     db.delete(archive)
     db.commit()
-
-
-@router.get("/cover/{filename}")
-async def get_cover(filename: str):
-    filepath = storage.get_cover_path(filename)
-    if not filepath:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found")
-    return FileResponse(filepath, media_type="image/jpeg")
 
 
 # ============================================

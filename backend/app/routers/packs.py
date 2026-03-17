@@ -59,207 +59,7 @@ def _pack_to_response(pack: Pack) -> dict:
     }
 
 
-@router.post("", response_model=PackResponse)
-async def create_pack(
-    data: PackCreate,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "access")),
-):
-    if not data.archive_ids:
-        raise HTTPException(status_code=400, detail="Au moins une archive requise")
-
-    archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
-    if len(archives) != len(data.archive_ids):
-        raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
-
-    # Order archives by the request order
-    archive_map = {a.id: a for a in archives}
-    ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
-
-    token = secrets.token_hex(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
-
-    # Generate OG image
-    cover_filenames = [a.cover_path for a in ordered_archives if a.cover_path]
-    image_filename = save_pack_image(data.name, cover_filenames, data.description, db=db)
-
-    pack = Pack(
-        name=data.name,
-        description=data.description,
-        token=token,
-        image_path=image_filename,
-        expires_at=expires_at,
-        created_by=None,  # Could resolve user id from JWT if needed
-    )
-    db.add(pack)
-    db.flush()
-
-    # Insert associations with position
-    for pos, archive in enumerate(ordered_archives):
-        db.execute(
-            pack_archives.insert().values(
-                pack_id=pack.id, archive_id=archive.id, position=pos
-            )
-        )
-
-    db.commit()
-    db.refresh(pack)
-
-    return _pack_to_response(pack)
-
-
-@router.get("")
-async def list_packs(
-    limit: int = 10,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "access")),
-):
-    query = db.query(Pack).order_by(Pack.created_at.desc())
-    total = query.count()
-    packs = query.offset(offset).limit(limit).all()
-    return {"items": [_pack_to_response(p) for p in packs], "total": total}
-
-
-@router.get("/{pack_id}", response_model=PackResponse)
-async def get_pack(
-    pack_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "access")),
-):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack:
-        raise HTTPException(status_code=404, detail="Pack introuvable")
-    return _pack_to_response(pack)
-
-
-@router.put("/{pack_id}", response_model=PackResponse)
-async def update_pack(
-    pack_id: int,
-    data: PackUpdate,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "modify")),
-):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack:
-        raise HTTPException(status_code=404, detail="Pack introuvable")
-
-    if data.name is not None:
-        pack.name = data.name
-    if data.description is not None:
-        pack.description = data.description
-
-    if data.archive_ids is not None:
-        if not data.archive_ids:
-            raise HTTPException(status_code=400, detail="Au moins une archive requise")
-
-        archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
-        if len(archives) != len(data.archive_ids):
-            raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
-
-        # Clear existing associations
-        db.execute(pack_archives.delete().where(pack_archives.c.pack_id == pack.id))
-
-        archive_map = {a.id: a for a in archives}
-        ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
-
-        for pos, archive in enumerate(ordered_archives):
-            db.execute(
-                pack_archives.insert().values(
-                    pack_id=pack.id, archive_id=archive.id, position=pos
-                )
-            )
-
-    # Regenerate image
-    if pack.image_path:
-        delete_pack_image(pack.image_path)
-
-    db.refresh(pack)
-    cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
-    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
-
-    db.commit()
-    db.refresh(pack)
-
-    return _pack_to_response(pack)
-
-
-@router.post("/{pack_id}/reshare", response_model=PackResponse)
-async def reshare_pack(
-    pack_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "access")),
-):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack:
-        raise HTTPException(status_code=404, detail="Pack introuvable")
-
-    pack.expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
-    db.commit()
-    db.refresh(pack)
-
-    return _pack_to_response(pack)
-
-
-@router.post("/{pack_id}/regenerate-image", response_model=PackResponse)
-async def regenerate_pack_image(
-    pack_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "modify")),
-):
-    """Regenerate the OG image for a pack."""
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack:
-        raise HTTPException(status_code=404, detail="Pack introuvable")
-
-    if pack.image_path:
-        delete_pack_image(pack.image_path)
-
-    cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
-    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
-
-    db.commit()
-    db.refresh(pack)
-
-    return _pack_to_response(pack)
-
-
-@router.delete("/{pack_id}", status_code=204)
-async def delete_pack(
-    pack_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("packs", "delete")),
-):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack:
-        raise HTTPException(status_code=404, detail="Pack introuvable")
-
-    if pack.image_path:
-        delete_pack_image(pack.image_path)
-
-    if pack.discord_post_id:
-        try:
-            from app.services.discord_bot import delete_discord_thread
-            delete_discord_thread(pack.discord_post_id)
-        except Exception as e:
-            logger.warning("Failed to delete Discord thread for pack %s: %s", pack.id, e)
-
-    db.delete(pack)
-    db.commit()
-
-
-@router.get("/{pack_id}/image")
-async def get_pack_og_image(pack_id: int, db: Session = Depends(get_db)):
-    """Serve the OG image for crawlers (no auth required)."""
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
-    if not pack or not pack.image_path:
-        raise HTTPException(status_code=404, detail="Image introuvable")
-
-    filepath = get_pack_image_path(pack.image_path)
-    if not filepath:
-        raise HTTPException(status_code=404, detail="Image introuvable")
-
-    return FileResponse(filepath, media_type="image/jpeg")
+# ── Static routes (MUST be before /{pack_id} to avoid shadowing) ──
 
 
 VALID_ASSET_TYPES = ("background", "mascot")
@@ -467,3 +267,209 @@ async def download_all(token: str, db: Session = Depends(get_db)):
             "Content-Disposition": f'attachment; filename="{safe_pack_name}.zip"',
         },
     )
+
+
+# ── Dynamic routes with {pack_id} ──
+
+
+@router.post("", response_model=PackResponse)
+async def create_pack(
+    data: PackCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "access")),
+):
+    if not data.archive_ids:
+        raise HTTPException(status_code=400, detail="Au moins une archive requise")
+
+    archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
+    if len(archives) != len(data.archive_ids):
+        raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
+
+    # Order archives by the request order
+    archive_map = {a.id: a for a in archives}
+    ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
+
+    token = secrets.token_hex(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
+
+    # Generate OG image
+    cover_filenames = [a.cover_path for a in ordered_archives if a.cover_path]
+    image_filename = save_pack_image(data.name, cover_filenames, data.description, db=db)
+
+    pack = Pack(
+        name=data.name,
+        description=data.description,
+        token=token,
+        image_path=image_filename,
+        expires_at=expires_at,
+        created_by=None,  # Could resolve user id from JWT if needed
+    )
+    db.add(pack)
+    db.flush()
+
+    # Insert associations with position
+    for pos, archive in enumerate(ordered_archives):
+        db.execute(
+            pack_archives.insert().values(
+                pack_id=pack.id, archive_id=archive.id, position=pos
+            )
+        )
+
+    db.commit()
+    db.refresh(pack)
+
+    return _pack_to_response(pack)
+
+
+@router.get("")
+async def list_packs(
+    limit: int = 10,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "access")),
+):
+    query = db.query(Pack).order_by(Pack.created_at.desc())
+    total = query.count()
+    packs = query.offset(offset).limit(limit).all()
+    return {"items": [_pack_to_response(p) for p in packs], "total": total}
+
+
+@router.get("/{pack_id}", response_model=PackResponse)
+async def get_pack(
+    pack_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "access")),
+):
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack introuvable")
+    return _pack_to_response(pack)
+
+
+@router.put("/{pack_id}", response_model=PackResponse)
+async def update_pack(
+    pack_id: int,
+    data: PackUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "modify")),
+):
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack introuvable")
+
+    if data.name is not None:
+        pack.name = data.name
+    if data.description is not None:
+        pack.description = data.description
+
+    if data.archive_ids is not None:
+        if not data.archive_ids:
+            raise HTTPException(status_code=400, detail="Au moins une archive requise")
+
+        archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
+        if len(archives) != len(data.archive_ids):
+            raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
+
+        # Clear existing associations
+        db.execute(pack_archives.delete().where(pack_archives.c.pack_id == pack.id))
+
+        archive_map = {a.id: a for a in archives}
+        ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
+
+        for pos, archive in enumerate(ordered_archives):
+            db.execute(
+                pack_archives.insert().values(
+                    pack_id=pack.id, archive_id=archive.id, position=pos
+                )
+            )
+
+    # Regenerate image
+    if pack.image_path:
+        delete_pack_image(pack.image_path)
+
+    db.refresh(pack)
+    cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
+    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
+
+    db.commit()
+    db.refresh(pack)
+
+    return _pack_to_response(pack)
+
+
+@router.post("/{pack_id}/reshare", response_model=PackResponse)
+async def reshare_pack(
+    pack_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "access")),
+):
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack introuvable")
+
+    pack.expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
+    db.commit()
+    db.refresh(pack)
+
+    return _pack_to_response(pack)
+
+
+@router.post("/{pack_id}/regenerate-image", response_model=PackResponse)
+async def regenerate_pack_image(
+    pack_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "modify")),
+):
+    """Regenerate the OG image for a pack."""
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack introuvable")
+
+    if pack.image_path:
+        delete_pack_image(pack.image_path)
+
+    cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
+    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
+
+    db.commit()
+    db.refresh(pack)
+
+    return _pack_to_response(pack)
+
+
+@router.delete("/{pack_id}", status_code=204)
+async def delete_pack(
+    pack_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("packs", "delete")),
+):
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack introuvable")
+
+    if pack.image_path:
+        delete_pack_image(pack.image_path)
+
+    if pack.discord_post_id:
+        try:
+            from app.services.discord_bot import delete_discord_thread
+            delete_discord_thread(pack.discord_post_id)
+        except Exception as e:
+            logger.warning("Failed to delete Discord thread for pack %s: %s", pack.id, e)
+
+    db.delete(pack)
+    db.commit()
+
+
+@router.get("/{pack_id}/image")
+async def get_pack_og_image(pack_id: int, db: Session = Depends(get_db)):
+    """Serve the OG image for crawlers (no auth required)."""
+    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    if not pack or not pack.image_path:
+        raise HTTPException(status_code=404, detail="Image introuvable")
+
+    filepath = get_pack_image_path(pack.image_path)
+    if not filepath:
+        raise HTTPException(status_code=404, detail="Image introuvable")
+
+    return FileResponse(filepath, media_type="image/jpeg")
