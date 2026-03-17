@@ -15,7 +15,7 @@ const pendingSubmissionsCount = ref(0)
 async function fetchPendingCount() {
   if (authStore.isAuthenticated && authStore.hasPermission('submissions', 'access')) {
     try {
-      const { data } = await api.get('/api/submissions/count')
+      const { data } = await api.get('/api/submissions/submissions-count')
       pendingSubmissionsCount.value = data.count
     } catch {
       pendingSubmissionsCount.value = 0

@@ -119,7 +119,7 @@ async def list_submissions(
     return query.all()
 
 
-@router.get("/count")
+@router.get("/submissions-count")
 async def count_pending(
     db: Session = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
