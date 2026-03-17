@@ -23,8 +23,9 @@ export const useArchivesStore = defineStore('archives', () => {
       const response = await api.get('/api/archives', {
         params: { ...params, limit: PAGE_SIZE, offset: 0 },
       })
-      archives.value = response.data.items
-      total.value = response.data.total
+      const data = response.data
+      archives.value = Array.isArray(data) ? data : (data.items || [])
+      total.value = data.total ?? archives.value.length
     } catch (e) {
       error.value = e.message
     } finally {
@@ -41,8 +42,10 @@ export const useArchivesStore = defineStore('archives', () => {
       const response = await api.get('/api/archives', {
         params: { ..._currentFilters.value, limit: PAGE_SIZE, offset: archives.value.length },
       })
-      archives.value.push(...response.data.items)
-      total.value = response.data.total
+      const data = response.data
+      const items = Array.isArray(data) ? data : (data.items || [])
+      archives.value.push(...items)
+      total.value = data.total ?? archives.value.length
     } catch (e) {
       error.value = e.message
     } finally {

@@ -20,8 +20,9 @@ export const usePacksStore = defineStore('packs', () => {
       const response = await api.get('/api/packs', {
         params: { limit: PAGE_SIZE, offset: 0 },
       })
-      packs.value = response.data.items
-      total.value = response.data.total
+      const data = response.data
+      packs.value = Array.isArray(data) ? data : (data.items || [])
+      total.value = data.total ?? packs.value.length
     } catch (e) {
       error.value = e.message
     } finally {
@@ -36,8 +37,10 @@ export const usePacksStore = defineStore('packs', () => {
       const response = await api.get('/api/packs', {
         params: { limit: PAGE_SIZE, offset: packs.value.length },
       })
-      packs.value.push(...response.data.items)
-      total.value = response.data.total
+      const data = response.data
+      const items = Array.isArray(data) ? data : (data.items || [])
+      packs.value.push(...items)
+      total.value = data.total ?? packs.value.length
     } catch (e) {
       error.value = e.message
     } finally {
