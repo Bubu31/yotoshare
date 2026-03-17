@@ -9,9 +9,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_BACKEND: yotoshare-backend
-  IMAGE_NAME_FRONTEND: yotoshare-frontend
-  IMAGE_NAME_NGINX: yotoshare-nginx
+  IMAGE_NAME_BACKEND: bubu31/yotoshare-backend
+  IMAGE_NAME_FRONTEND: bubu31/yotoshare-frontend
+  IMAGE_NAME_NGINX: bubu31/yotoshare-nginx
 
 jobs:
   test:
