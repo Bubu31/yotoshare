@@ -123,28 +123,6 @@ class PackAsset(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class Submission(Base):
-    __tablename__ = "submissions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    pseudonym = Column(String(255), nullable=True)
-    title = Column(String(255), nullable=True)
-    cover_path = Column(String(500), nullable=True)
-    archive_path = Column(String(500), nullable=False)
-    file_size = Column(Integer, default=0)
-    total_duration = Column(Integer, nullable=True)
-    chapters_count = Column(Integer, nullable=True)
-    chapters_data = Column(Text, nullable=True)
-    status = Column(String(20), default="pending", index=True)
-    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    rejection_reason = Column(Text, nullable=True)
-    submitter_ip = Column(String(45), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    reviewer = relationship("User")
-
-
 class DownloadToken(Base):
     __tablename__ = "download_tokens"
 

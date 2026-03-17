@@ -8,7 +8,6 @@ from app.routers.users import router as users_router
 from app.routers.share import router as share_router
 from app.routers.roles import router as roles_router
 from app.routers.packs import router as packs_router
-from app.routers.submissions import router as submissions_router
 
 __all__ = [
     "archives_router",
@@ -21,5 +20,4 @@ __all__ = [
     "share_router",
     "roles_router",
     "packs_router",
-    "submissions_router",
 ]
