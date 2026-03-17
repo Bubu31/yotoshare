@@ -70,13 +70,20 @@ async def on_interaction(interaction: discord.Interaction):
         try:
             pack_id = int(custom_id.split("_")[2])
         except (IndexError, ValueError):
-            await interaction.response.send_message(
-                "❌ Bouton invalide.",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "❌ Bouton invalide.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            logger.warning("Pack download interaction expired before defer (pack %s)", pack_id)
+            return
 
         from app.database import SessionLocal
         from app.models import Pack
@@ -133,15 +140,22 @@ async def on_interaction(interaction: discord.Interaction):
         try:
             archive_id = int(custom_id.split("_")[1])
         except (IndexError, ValueError):
-            await interaction.response.send_message(
-                "❌ Bouton invalide.",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "❌ Bouton invalide.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # CRITICAL: Defer immediately to avoid Discord's 3-second timeout
         # This acknowledges the interaction and shows "thinking..." to the user
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            logger.warning("Download interaction expired before defer (archive %s)", archive_id)
+            return
 
         from app.database import SessionLocal
         from app.models import Archive
