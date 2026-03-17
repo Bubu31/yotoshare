@@ -28,8 +28,14 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.discord_bot_token:
-        bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
-        bot_thread.start()
+        import fcntl
+        lock_file = open("/tmp/yotoshare-discord.lock", "w")
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
+            bot_thread.start()
+        except OSError:
+            pass  # Another worker already runs the bot
 
     yield
 
