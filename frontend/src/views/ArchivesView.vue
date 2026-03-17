@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArchivesStore } from '../stores/archives'
 import { useAuthStore } from '../stores/auth'
@@ -104,6 +104,19 @@ watch(hidePublished, debouncedFetch)
 const sentinel = ref(null)
 let observer = null
 
+function checkAndLoadMore() {
+  if (!sentinel.value || !archivesStore.hasMore() || archivesStore.loading || archivesStore.loadingMore) return
+  const rect = sentinel.value.getBoundingClientRect()
+  if (rect.top < window.innerHeight + 200) {
+    archivesStore.loadMore()
+  }
+}
+
+// After loadMore finishes, check if sentinel is still visible (need another page)
+watch(() => archivesStore.loadingMore, (val) => {
+  if (!val) nextTick(checkAndLoadMore)
+})
+
 onMounted(async () => {
   await Promise.all([
     archivesStore.fetchCategories(),
@@ -113,8 +126,8 @@ onMounted(async () => {
 
   observer = new IntersectionObserver(
     (entries) => {
-      if (entries[0].isIntersecting && archivesStore.hasMore() && !archivesStore.loading) {
-        archivesStore.loadMore()
+      if (entries[0].isIntersecting) {
+        checkAndLoadMore()
       }
     },
     { rootMargin: '200px' }

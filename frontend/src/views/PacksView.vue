@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { usePacksStore } from '../stores/packs'
 import { useAuthStore } from '../stores/auth'
 import { useMessage } from '../composables/useMessage'
@@ -19,6 +19,18 @@ const showPublishModal = ref(false)
 const sentinel = ref(null)
 let observer = null
 
+function checkAndLoadMore() {
+  if (!sentinel.value || !packsStore.hasMore() || packsStore.loading || packsStore.loadingMore) return
+  const rect = sentinel.value.getBoundingClientRect()
+  if (rect.top < window.innerHeight + 200) {
+    packsStore.loadMore()
+  }
+}
+
+watch(() => packsStore.loadingMore, (val) => {
+  if (!val) nextTick(checkAndLoadMore)
+})
+
 onMounted(async () => {
   await packsStore.fetchPacks()
   if (authStore.hasPermission('packs', 'modify')) {
@@ -27,8 +39,8 @@ onMounted(async () => {
 
   observer = new IntersectionObserver(
     (entries) => {
-      if (entries[0].isIntersecting && packsStore.hasMore() && !packsStore.loading) {
-        packsStore.loadMore()
+      if (entries[0].isIntersecting) {
+        checkAndLoadMore()
       }
     },
     { rootMargin: '200px' }
