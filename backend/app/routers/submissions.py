@@ -173,32 +173,59 @@ async def get_submission_content(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
     archive_path = storage.get_archive_path(submission.archive_path)
-    if not archive_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 
-    try:
-        content = archive_editor.get_archive_content(archive_path)
-        chapters = [
-            {
-                "key": ch.get("key") or f"chapter_{i}",
-                "title": ch.get("title"),
-                "label": ch.get("label"),
-                "duration": ch.get("duration"),
-                "audio_file": ch.get("audio_file"),
-                "icon_file": ch.get("icon_file"),
-                "order": ch.get("order", i),
+    if archive_path:
+        try:
+            content = archive_editor.get_archive_content(archive_path)
+            chapters = [
+                {
+                    "key": ch.get("key") or f"chapter_{i}",
+                    "title": ch.get("title"),
+                    "label": ch.get("label"),
+                    "duration": ch.get("duration"),
+                    "audio_file": ch.get("audio_file"),
+                    "icon_file": ch.get("icon_file"),
+                    "order": ch.get("order", i),
+                }
+                for i, ch in enumerate(content.get("chapters", []))
+            ]
+            return {
+                "id": submission.id,
+                "title": submission.title,
+                "chapters": chapters,
+                "has_cover": content.get("has_cover", False),
             }
-            for i, ch in enumerate(content.get("chapters", []))
-        ]
-        return {
-            "id": submission.id,
-            "title": submission.title,
-            "chapters": chapters,
-            "has_cover": content.get("has_cover", False),
-        }
-    except Exception as e:
-        logger.exception("Error loading submission content")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        except Exception as e:
+            logger.exception("Error loading submission content")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    # Archive file not on disk — fall back to cached chapters_data
+    logger.warning("Archive file not found for submission %d, using cached chapters_data", submission_id)
+    chapters = []
+    if submission.chapters_data:
+        try:
+            cached = json.loads(submission.chapters_data)
+            chapters = [
+                {
+                    "key": ch.get("key") or f"chapter_{i}",
+                    "title": ch.get("title"),
+                    "label": ch.get("label"),
+                    "duration": ch.get("duration"),
+                    "audio_file": None,
+                    "icon_file": None,
+                    "order": i,
+                }
+                for i, ch in enumerate(cached)
+            ]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {
+        "id": submission.id,
+        "title": submission.title,
+        "chapters": chapters,
+        "has_cover": bool(submission.cover_path),
+        "archive_missing": True,
+    }
 
 
 @router.get("/{submission_id}/audio/{chapter_key}")
