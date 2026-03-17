@@ -99,6 +99,22 @@ async function generateGridVisual() {
         </div>
       </router-link>
 
+      <router-link
+        v-if="authStore.hasPermission('submissions', 'access')"
+        to="/admin/submissions"
+        class="card p-6 hover:shadow-lg transition-shadow duration-300 group"
+      >
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+            <i class="fas fa-inbox text-xl text-purple-600 dark:text-purple-400"></i>
+          </div>
+          <div>
+            <h3 class="font-semibold text-gray-800 dark:text-white">Soumissions</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Modérer les soumissions</p>
+          </div>
+        </div>
+      </router-link>
+
       <button
         v-if="authStore.hasPermission('archives', 'modify')"
         @click="generateGridVisual"

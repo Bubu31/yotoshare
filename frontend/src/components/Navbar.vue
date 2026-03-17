@@ -1,14 +1,30 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { useRouter } from 'vue-router'
+import api from '../services/api'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const router = useRouter()
 
 const mobileMenuOpen = ref(false)
+const pendingSubmissionsCount = ref(0)
+
+async function fetchPendingCount() {
+  if (authStore.isAuthenticated && authStore.hasPermission('submissions', 'access')) {
+    try {
+      const { data } = await api.get('/api/submissions/count')
+      pendingSubmissionsCount.value = data.count
+    } catch {
+      pendingSubmissionsCount.value = 0
+    }
+  }
+}
+
+onMounted(fetchPendingCount)
+watch(() => authStore.isAuthenticated, fetchPendingCount)
 
 function logout() {
   authStore.logout()
@@ -50,6 +66,20 @@ function closeMenu() {
             >
               <i class="fas fa-box-open mr-1.5"></i>
               Packs
+            </router-link>
+            <router-link
+              v-if="authStore.hasPermission('submissions', 'access')"
+              to="/admin/submissions"
+              class="relative px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-white font-semibold transition-all duration-200 hover:bg-indigo-50 dark:hover:bg-white/5"
+            >
+              <i class="fas fa-inbox mr-1.5"></i>
+              Soumissions
+              <span
+                v-if="pendingSubmissionsCount > 0"
+                class="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white min-w-[1.25rem] text-center leading-none"
+              >
+                {{ pendingSubmissionsCount }}
+              </span>
             </router-link>
             <router-link
               v-if="authStore.hasPermission('categories', 'access') || authStore.hasPermission('ages', 'access') || authStore.hasPermission('users', 'access') || authStore.hasPermission('roles', 'access')"
@@ -129,6 +159,21 @@ function closeMenu() {
           >
             <i class="fas fa-box-open mr-2"></i>
             Packs
+          </router-link>
+          <router-link
+            v-if="authStore.hasPermission('submissions', 'access')"
+            to="/admin/submissions"
+            @click="closeMenu"
+            class="block px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-white hover:bg-indigo-50 dark:hover:bg-white/5 rounded-lg font-semibold transition-all"
+          >
+            <i class="fas fa-inbox mr-2"></i>
+            Soumissions
+            <span
+              v-if="pendingSubmissionsCount > 0"
+              class="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white"
+            >
+              {{ pendingSubmissionsCount }}
+            </span>
           </router-link>
           <router-link
             v-if="authStore.hasPermission('categories', 'access') || authStore.hasPermission('ages', 'access') || authStore.hasPermission('users', 'access') || authStore.hasPermission('roles', 'access')"

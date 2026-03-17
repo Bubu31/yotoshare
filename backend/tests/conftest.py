@@ -25,7 +25,7 @@ from app.auth import create_access_token
 from app.main import app
 from app.models import (
     Archive, Category, Age, User, Role, Pack, PackAsset,
-    pack_archives,
+    pack_archives, Submission,
 )
 
 # Use in-memory SQLite for tests
