@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-from app.database import init_db
 from app.routers import (
     archives_router,
     categories_router,
@@ -28,8 +27,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-
     if settings.discord_bot_token:
         bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
         bot_thread.start()
