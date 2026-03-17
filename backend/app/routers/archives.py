@@ -61,11 +61,15 @@ def get_or_create_ages(db: Session, age_names: List[str]) -> List[Age]:
     return ages
 
 
-@router.get("", response_model=List[ArchiveListResponse])
+@router.get("")
 async def list_archives(
     category_id: Optional[int] = None,
     age_id: Optional[int] = None,
     search: Optional[str] = None,
+    sort: Optional[str] = "date-desc",
+    hide_published: Optional[bool] = False,
+    limit: int = 10,
+    offset: int = 0,
     db: Session = Depends(get_db),
 ):
     query = db.query(Archive)
@@ -78,7 +82,23 @@ async def list_archives(
         query = query.filter(
             (Archive.title.ilike(search_term)) | (Archive.author.ilike(search_term))
         )
-    return query.order_by(Archive.created_at.desc()).all()
+    if hide_published:
+        query = query.filter(Archive.discord_post_id.is_(None))
+
+    total = query.count()
+
+    sort_map = {
+        "date-desc": Archive.created_at.desc(),
+        "date-asc": Archive.created_at.asc(),
+        "alpha-asc": Archive.title.asc(),
+        "alpha-desc": Archive.title.desc(),
+        "downloads-desc": Archive.download_count.desc(),
+        "downloads-asc": Archive.download_count.asc(),
+    }
+    order = sort_map.get(sort, Archive.created_at.desc())
+    items = query.order_by(order).offset(offset).limit(limit).all()
+
+    return {"items": items, "total": total}
 
 
 def archive_to_response(archive: Archive) -> dict:

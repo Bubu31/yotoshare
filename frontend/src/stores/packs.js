@@ -5,15 +5,23 @@ import api from '../services/api'
 export const usePacksStore = defineStore('packs', () => {
   const packs = ref([])
   const loading = ref(false)
+  const loadingMore = ref(false)
   const error = ref(null)
   const assets = ref({ background: null, mascot: null })
+  const total = ref(0)
+  const PAGE_SIZE = 10
+
+  const hasMore = () => packs.value.length < total.value
 
   async function fetchPacks() {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get('/api/packs')
-      packs.value = response.data
+      const response = await api.get('/api/packs', {
+        params: { limit: PAGE_SIZE, offset: 0 },
+      })
+      packs.value = response.data.items
+      total.value = response.data.total
     } catch (e) {
       error.value = e.message
     } finally {
@@ -21,9 +29,26 @@ export const usePacksStore = defineStore('packs', () => {
     }
   }
 
+  async function loadMore() {
+    if (loadingMore.value || !hasMore()) return
+    loadingMore.value = true
+    try {
+      const response = await api.get('/api/packs', {
+        params: { limit: PAGE_SIZE, offset: packs.value.length },
+      })
+      packs.value.push(...response.data.items)
+      total.value = response.data.total
+    } catch (e) {
+      error.value = e.message
+    } finally {
+      loadingMore.value = false
+    }
+  }
+
   async function createPack(data) {
     const response = await api.post('/api/packs', data)
     packs.value.unshift(response.data)
+    total.value++
     return response.data
   }
 
@@ -39,6 +64,7 @@ export const usePacksStore = defineStore('packs', () => {
   async function deletePack(id) {
     await api.delete(`/api/packs/${id}`)
     packs.value = packs.value.filter(p => p.id !== id)
+    total.value--
   }
 
   async function regenerateImage(id) {
@@ -86,9 +112,13 @@ export const usePacksStore = defineStore('packs', () => {
   return {
     packs,
     loading,
+    loadingMore,
     error,
     assets,
+    total,
+    hasMore,
     fetchPacks,
+    loadMore,
     createPack,
     resharePack,
     deletePack,

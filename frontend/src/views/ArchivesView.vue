@@ -27,7 +27,7 @@ const selectedIds = ref(new Set())
 const showCreatePackModal = ref(false)
 
 const selectedArchiveObjects = computed(() => {
-  return sortedArchives.value.filter(a => selectedIds.value.has(a.id))
+  return archivesStore.archives.filter(a => selectedIds.value.has(a.id))
 })
 
 function toggleSelectionMode() {
@@ -48,7 +48,7 @@ function toggleSelect(archive) {
 }
 
 function selectAll() {
-  selectedIds.value = new Set(sortedArchives.value.map(a => a.id))
+  selectedIds.value = new Set(archivesStore.archives.map(a => a.id))
 }
 
 function deselectAll() {
@@ -78,57 +78,54 @@ watch(filterCategory, v => localStorage.setItem('archives_filterCategory', JSON.
 watch(filterAge, v => localStorage.setItem('archives_filterAge', JSON.stringify(v)))
 watch(hidePublished, v => localStorage.setItem('archives_hidePublished', v))
 
-const filteredArchives = computed(() => {
-  let list = archivesStore.archives
-  if (hidePublished.value) {
-    list = list.filter(a => !a.discord_post_id)
-  }
-  return list
-})
-
-const sortedArchives = computed(() => {
-  const list = [...filteredArchives.value]
-  switch (sortBy.value) {
-    case 'alpha-asc':
-      return list.sort((a, b) => (a.title || '').localeCompare(b.title || ''))
-    case 'alpha-desc':
-      return list.sort((a, b) => (b.title || '').localeCompare(a.title || ''))
-    case 'date-asc':
-      return list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    case 'downloads-desc':
-      return list.sort((a, b) => (b.download_count || 0) - (a.download_count || 0))
-    case 'downloads-asc':
-      return list.sort((a, b) => (a.download_count || 0) - (b.download_count || 0))
-    case 'date-desc':
-    default:
-      return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-  }
-})
+function buildParams() {
+  const params = { sort: sortBy.value }
+  if (filterCategory.value) params.category_id = filterCategory.value
+  if (filterAge.value) params.age_id = filterAge.value
+  if (searchQuery.value) params.search = searchQuery.value
+  if (hidePublished.value) params.hide_published = true
+  return params
+}
 
 function debouncedFetch() {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    archivesStore.fetchArchives(
-      filterCategory.value || null,
-      filterAge.value || null,
-      searchQuery.value || null
-    )
+    archivesStore.fetchArchives(buildParams())
   }, 300)
 }
 
 watch(searchQuery, debouncedFetch)
 watch(filterCategory, debouncedFetch)
 watch(filterAge, debouncedFetch)
+watch(sortBy, debouncedFetch)
+watch(hidePublished, debouncedFetch)
+
+// Infinite scroll
+const sentinel = ref(null)
+let observer = null
 
 onMounted(async () => {
   await Promise.all([
     archivesStore.fetchCategories(),
     archivesStore.fetchAges(),
-    archivesStore.fetchArchives(filterCategory.value || null, filterAge.value || null),
+    archivesStore.fetchArchives(buildParams()),
   ])
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && archivesStore.hasMore() && !archivesStore.loading) {
+        archivesStore.loadMore()
+      }
+    },
+    { rootMargin: '200px' }
+  )
+  if (sentinel.value) observer.observe(sentinel.value)
 })
 
-onUnmounted(() => clearTimeout(searchTimeout))
+onUnmounted(() => {
+  clearTimeout(searchTimeout)
+  if (observer) observer.disconnect()
+})
 
 function handleEdit(archive) {
   router.push(`/archives/edit/${archive.id}`)
@@ -202,7 +199,7 @@ async function confirmPublish(archive) {
 }
 
 async function handleBulkUploadComplete() {
-  await archivesStore.fetchArchives()
+  await archivesStore.fetchArchives(buildParams())
   showMessage('success', 'Import en masse terminé')
 }
 
@@ -249,7 +246,7 @@ async function handleBulkUploadComplete() {
       <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
         <h2 class="text-xl font-semibold text-gray-800 dark:text-white">
           <i class="fas fa-book mr-2"></i>
-          Archives ({{ filteredArchives.length }}{{ hidePublished ? ` / ${archivesStore.archives.length}` : '' }})
+          Archives ({{ archivesStore.archives.length }}{{ archivesStore.total > archivesStore.archives.length ? ` / ${archivesStore.total}` : '' }})
         </h2>
         <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center">
           <div class="relative">
@@ -311,7 +308,7 @@ async function handleBulkUploadComplete() {
 
       <div v-else class="grid gap-4">
         <ArchiveCard
-          v-for="archive in sortedArchives"
+          v-for="archive in archivesStore.archives"
           :key="archive.id"
           :archive="archive"
           :show-actions="!selectionMode"
@@ -323,6 +320,13 @@ async function handleBulkUploadComplete() {
           @publish="handlePublish"
           @toggle-select="toggleSelect"
         />
+
+        <!-- Infinite scroll sentinel -->
+        <div ref="sentinel" class="h-4"></div>
+
+        <div v-if="archivesStore.loadingMore" class="text-center py-4">
+          <i class="fas fa-spinner fa-spin text-2xl text-primary-600"></i>
+        </div>
       </div>
     </div>
 
@@ -359,10 +363,10 @@ async function handleBulkUploadComplete() {
           {{ selectedIds.size }} sélectionnée{{ selectedIds.size > 1 ? 's' : '' }}
         </span>
         <button
-          @click="selectedIds.size === sortedArchives.length ? deselectAll() : selectAll()"
+          @click="selectedIds.size === archivesStore.archives.length ? deselectAll() : selectAll()"
           class="text-sm text-primary-400 hover:text-primary-300 transition-colors"
         >
-          {{ selectedIds.size === sortedArchives.length ? 'Tout désélectionner' : 'Tout sélectionner' }}
+          {{ selectedIds.size === archivesStore.archives.length ? 'Tout désélectionner' : 'Tout sélectionner' }}
         </button>
         <button
           @click="openCreatePackModal"

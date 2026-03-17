@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { usePacksStore } from '../stores/packs'
 import { useAuthStore } from '../stores/auth'
 import { useMessage } from '../composables/useMessage'
@@ -16,12 +16,28 @@ const uploadingMascot = ref(false)
 const regeneratingId = ref(null)
 const selectedPack = ref(null)
 const showPublishModal = ref(false)
+const sentinel = ref(null)
+let observer = null
 
-onMounted(() => {
-  packsStore.fetchPacks()
+onMounted(async () => {
+  await packsStore.fetchPacks()
   if (authStore.hasPermission('packs', 'modify')) {
     packsStore.fetchAssets()
   }
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && packsStore.hasMore() && !packsStore.loading) {
+        packsStore.loadMore()
+      }
+    },
+    { rootMargin: '200px' }
+  )
+  if (sentinel.value) observer.observe(sentinel.value)
+})
+
+onUnmounted(() => {
+  if (observer) observer.disconnect()
 })
 
 function isExpired(pack) {
@@ -414,6 +430,13 @@ function assetUrl(type) {
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Infinite scroll sentinel -->
+      <div ref="sentinel" class="h-4"></div>
+
+      <div v-if="packsStore.loadingMore" class="text-center py-4">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-600"></i>
       </div>
     </div>
     <PublishModal

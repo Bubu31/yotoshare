@@ -108,13 +108,17 @@ async def create_pack(
     return _pack_to_response(pack)
 
 
-@router.get("", response_model=list[PackResponse])
+@router.get("")
 async def list_packs(
+    limit: int = 10,
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
-    packs = db.query(Pack).order_by(Pack.created_at.desc()).all()
-    return [_pack_to_response(p) for p in packs]
+    query = db.query(Pack).order_by(Pack.created_at.desc())
+    total = query.count()
+    packs = query.offset(offset).limit(limit).all()
+    return {"items": [_pack_to_response(p) for p in packs], "total": total}
 
 
 @router.get("/{pack_id}", response_model=PackResponse)

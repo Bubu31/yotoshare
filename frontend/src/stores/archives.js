@@ -7,22 +7,46 @@ export const useArchivesStore = defineStore('archives', () => {
   const categories = ref([])
   const ages = ref([])
   const loading = ref(false)
+  const loadingMore = ref(false)
   const error = ref(null)
+  const total = ref(0)
+  const PAGE_SIZE = 10
 
-  async function fetchArchives(categoryId = null, ageId = null, search = null) {
+  // Current filter state for loadMore
+  const _currentFilters = ref({})
+
+  async function fetchArchives(params = {}) {
     loading.value = true
     error.value = null
+    _currentFilters.value = params
     try {
-      const params = {}
-      if (categoryId) params.category_id = categoryId
-      if (ageId) params.age_id = ageId
-      if (search) params.search = search
-      const response = await api.get('/api/archives', { params })
-      archives.value = response.data
+      const response = await api.get('/api/archives', {
+        params: { ...params, limit: PAGE_SIZE, offset: 0 },
+      })
+      archives.value = response.data.items
+      total.value = response.data.total
     } catch (e) {
       error.value = e.message
     } finally {
       loading.value = false
+    }
+  }
+
+  const hasMore = () => archives.value.length < total.value
+
+  async function loadMore() {
+    if (loadingMore.value || !hasMore()) return
+    loadingMore.value = true
+    try {
+      const response = await api.get('/api/archives', {
+        params: { ..._currentFilters.value, limit: PAGE_SIZE, offset: archives.value.length },
+      })
+      archives.value.push(...response.data.items)
+      total.value = response.data.total
+    } catch (e) {
+      error.value = e.message
+    } finally {
+      loadingMore.value = false
     }
   }
 
@@ -51,6 +75,7 @@ export const useArchivesStore = defineStore('archives', () => {
       onUploadProgress,
     })
     archives.value.unshift(response.data)
+    total.value++
     return response.data
   }
 
@@ -70,6 +95,7 @@ export const useArchivesStore = defineStore('archives', () => {
   async function deleteArchive(id) {
     await api.delete(`/api/archives/${id}`)
     archives.value = archives.value.filter(a => a.id !== id)
+    total.value--
   }
 
   async function publishToDiscord(archiveId) {
@@ -253,8 +279,12 @@ export const useArchivesStore = defineStore('archives', () => {
     categories,
     ages,
     loading,
+    loadingMore,
     error,
+    total,
+    hasMore,
     fetchArchives,
+    loadMore,
     fetchCategories,
     fetchAges,
     createArchive,
