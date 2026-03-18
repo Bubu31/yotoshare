@@ -55,7 +55,7 @@ function downloadUrl(id) {
           Archives à retravailler
         </h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Ces archives ont du potentiel mais nécessitent des améliorations. Téléchargez, retravaillez dans MYO Studio, et re-soumettez !
+          Ces archives ont du potentiel mais nécessitent des améliorations. Téléchargez, retravaillez et re-soumettez !
         </p>
       </div>
 
