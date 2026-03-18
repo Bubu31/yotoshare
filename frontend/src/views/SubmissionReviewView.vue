@@ -80,6 +80,7 @@ async function toggleAudio(key) {
   try {
     const { data } = await api.get(`/api/submissions/${submission.value.id}/audio/${key}`, { responseType: 'blob' })
     audioUrl.value = URL.createObjectURL(data)
+    await audioRef.value?.play()
   } catch (e) {
     showMessage('error', 'Impossible de charger l\'audio')
     playingKey.value = null
@@ -239,10 +240,8 @@ async function reject() {
 
           <!-- Audio player (hidden) -->
           <audio
-            v-if="audioUrl"
             ref="audioRef"
             :src="audioUrl"
-            autoplay
             @ended="playingKey = null"
             class="hidden"
           ></audio>
