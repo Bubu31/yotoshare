@@ -14,6 +14,7 @@ const activeTab = ref('pending')
 const tabs = [
   { key: 'pending', label: 'En attente', icon: 'fa-clock' },
   { key: 'approved', label: 'Approuvées', icon: 'fa-check-circle' },
+  { key: 'rework', label: 'A retravailler', icon: 'fa-wrench' },
   { key: 'rejected', label: 'Rejetées', icon: 'fa-times-circle' },
 ]
 
@@ -69,6 +70,7 @@ function formatDate(dateStr) {
 const statusColors = {
   pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
   approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  rework: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
   rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 }
 </script>
@@ -123,10 +125,42 @@ const statusColors = {
     <!-- Empty state -->
     <div v-else-if="filteredSubmissions.length === 0" class="text-center py-12">
       <i class="fas fa-inbox text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>
-      <p class="text-gray-500 dark:text-gray-400">Aucune soumission {{ activeTab === 'pending' ? 'en attente' : activeTab === 'approved' ? 'approuvée' : 'rejetée' }}</p>
+      <p class="text-gray-500 dark:text-gray-400">Aucune soumission {{ activeTab === 'pending' ? 'en attente' : activeTab === 'approved' ? 'approuvée' : activeTab === 'rework' ? 'à retravailler' : 'rejetée' }}</p>
     </div>
 
-    <!-- Grid -->
+    <!-- List (approved / rework / rejected) -->
+    <div v-else-if="activeTab === 'approved' || activeTab === 'rejected' || activeTab === 'rework'" class="space-y-3">
+      <div
+        v-for="sub in filteredSubmissions"
+        :key="sub.id"
+        class="card p-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h3 class="font-semibold text-gray-800 dark:text-white truncate">
+              {{ sub.title || 'Sans titre' }}
+            </h3>
+            <p v-if="sub.pseudonym" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              <i class="fas fa-user mr-1"></i>{{ sub.pseudonym }}
+            </p>
+          </div>
+          <span class="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            {{ formatDate(sub.reviewed_at || sub.created_at) }}
+          </span>
+        </div>
+        <div v-if="sub.rework_comment && activeTab === 'rework'" class="mt-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-sm text-orange-700 dark:text-orange-400">
+          <i class="fas fa-wrench mr-1.5"></i>{{ sub.rework_comment }}
+        </div>
+        <div v-if="sub.rejection_reason" class="mt-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+          <i class="fas fa-comment-slash mr-1.5"></i>{{ sub.rejection_reason }}
+        </div>
+        <div v-else-if="activeTab === 'rejected'" class="mt-2 text-sm text-gray-400 dark:text-gray-500 italic">
+          Aucune raison spécifiée
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid (pending) -->
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div
         v-for="sub in filteredSubmissions"

@@ -13,8 +13,10 @@ const content = ref(null)
 const loading = ref(true)
 const processing = ref(false)
 const showRejectModal = ref(false)
+const showReworkModal = ref(false)
 const showCoverModal = ref(false)
 const rejectionReason = ref('')
+const reworkComment = ref('')
 const playingKey = ref(null)
 const audioRef = ref(null)
 const audioUrl = ref(null)
@@ -121,6 +123,24 @@ async function reject() {
     processing.value = false
   }
 }
+
+async function rework() {
+  if (!reworkComment.value.trim()) return
+  processing.value = true
+  try {
+    const { data } = await api.post(`/api/submissions/${route.params.id}/review`, {
+      action: 'rework',
+      rework_comment: reworkComment.value.trim(),
+    })
+    showMessage('success', data.message)
+    showReworkModal.value = false
+    router.push('/admin/submissions')
+  } catch (e) {
+    showMessage('error', e.response?.data?.detail || 'Erreur lors du rework')
+  } finally {
+    processing.value = false
+  }
+}
 </script>
 
 <template>
@@ -180,15 +200,24 @@ async function reject() {
                 <div><i class="fas fa-calendar mr-2 w-4 text-center"></i>{{ formatDate(submission.created_at) }}</div>
               </div>
 
-              <div class="pt-2">
+              <div class="pt-2 flex flex-wrap items-center gap-2">
                 <span :class="[
                   'px-2.5 py-1 rounded-full text-xs font-semibold',
                   submission.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
                   submission.status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                  submission.status === 'rework' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' :
                   'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                 ]">
-                  {{ submission.status === 'pending' ? 'En attente' : submission.status === 'approved' ? 'Approuvée' : 'Rejetée' }}
+                  {{ submission.status === 'pending' ? 'En attente' : submission.status === 'approved' ? 'Approuvée' : submission.status === 'rework' ? 'A retravailler' : 'Rejetée' }}
                 </span>
+                <span v-if="submission.parent_submission_id" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                  <i class="fas fa-redo mr-1"></i>Re-soumission de #{{ submission.parent_submission_id }}
+                </span>
+              </div>
+
+              <div v-if="submission.rework_comment" class="text-sm text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                <i class="fas fa-wrench mr-1"></i>
+                {{ submission.rework_comment }}
               </div>
 
               <div v-if="submission.rejection_reason" class="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
@@ -268,6 +297,14 @@ async function reject() {
               Approuver
             </button>
             <button
+              @click="showReworkModal = true"
+              :disabled="processing"
+              class="flex-1 btn bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
+            >
+              <i class="fas fa-wrench mr-2"></i>
+              A retravailler
+            </button>
+            <button
               @click="showRejectModal = true"
               :disabled="processing"
               class="flex-1 btn bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
@@ -319,6 +356,46 @@ async function reject() {
         </div>
       </div>
     </Teleport>
+
+  <!-- Rework modal -->
+  <Teleport to="body">
+    <div v-if="showReworkModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="fixed inset-0 bg-black/50" @click="showReworkModal = false"></div>
+      <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-4">
+          <i class="fas fa-wrench text-orange-500 mr-2"></i>
+          Demander un rework
+        </h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Commentaire <span class="text-red-500">*</span>
+          </label>
+          <textarea
+            v-model="reworkComment"
+            rows="3"
+            class="input w-full"
+            placeholder="Expliquer ce qui doit être retravaillé..."
+          ></textarea>
+        </div>
+        <div class="flex gap-3">
+          <button
+            @click="showReworkModal = false"
+            class="flex-1 btn bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-xl py-2.5"
+          >
+            Annuler
+          </button>
+          <button
+            @click="rework"
+            :disabled="processing || !reworkComment.trim()"
+            class="flex-1 btn bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-2.5 disabled:opacity-50"
+          >
+            <i class="fas fa-wrench mr-1"></i>
+            Confirmer
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Cover modal -->
   <Teleport to="body">

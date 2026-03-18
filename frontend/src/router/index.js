@@ -71,6 +71,11 @@ const routes = [
     component: () => import('../views/SubmitView.vue'),
   },
   {
+    path: '/rework',
+    name: 'rework',
+    component: () => import('../views/ReworkListView.vue'),
+  },
+  {
     path: '/admin/submissions',
     name: 'submissions',
     component: () => import('../views/SubmissionsView.vue'),

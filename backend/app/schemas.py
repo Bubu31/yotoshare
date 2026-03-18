@@ -303,6 +303,30 @@ class SubmissionResponse(BaseModel):
     reviewer_id: Optional[int] = None
     reviewed_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
+    rework_comment: Optional[str] = None
+    parent_submission_id: Optional[int] = None
+    created_at: datetime
+
+    @field_validator("total_duration", mode="before")
+    @classmethod
+    def coerce_duration_to_int(cls, v):
+        return int(v) if v is not None else None
+
+    class Config:
+        from_attributes = True
+
+
+class ReworkSubmissionResponse(BaseModel):
+    id: int
+    pseudonym: Optional[str] = None
+    title: Optional[str] = None
+    cover_path: Optional[str] = None
+    file_size: int = 0
+    total_duration: Optional[int] = None
+    chapters_count: Optional[int] = None
+    chapters_data: Optional[str] = None
+    rework_comment: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     created_at: datetime
 
     @field_validator("total_duration", mode="before")
@@ -315,8 +339,9 @@ class SubmissionResponse(BaseModel):
 
 
 class SubmissionReviewRequest(BaseModel):
-    action: str  # "approve" or "reject"
+    action: str  # "approve", "reject", or "rework"
     rejection_reason: Optional[str] = None
+    rework_comment: Optional[str] = None
 
 
 # Pack schemas

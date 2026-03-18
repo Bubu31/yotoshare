@@ -139,10 +139,13 @@ class Submission(Base):
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    rework_comment = Column(Text, nullable=True)
+    parent_submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True, index=True)
     submitter_ip = Column(String(45), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     reviewer = relationship("User")
+    parent_submission = relationship("Submission", remote_side="Submission.id", foreign_keys=[parent_submission_id])
 
 
 class DownloadToken(Base):

@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models import Submission, Archive, User
-from app.schemas import SubmissionResponse, SubmissionReviewRequest
+from app.schemas import SubmissionResponse, SubmissionReviewRequest, ReworkSubmissionResponse
 from app.auth import require_permission
 from app.services import storage
 from app.services import archive_editor
@@ -49,11 +49,21 @@ async def create_submission(
     request: Request,
     file: UploadFile = File(...),
     pseudonym: Optional[str] = Form(None),
+    parent_submission_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Public endpoint: submit a MYO archive for moderation."""
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
+
+    if parent_submission_id is not None:
+        result = await db.execute(select(Submission).where(Submission.id == parent_submission_id))
+        parent = result.scalar_one_or_none()
+        if not parent or parent.status != "rework":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Soumission parente introuvable ou non en statut rework.",
+            )
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -95,6 +105,7 @@ async def create_submission(
         chapters_data=json.dumps(metadata["chapters"]) if metadata.get("chapters") else None,
         status="pending",
         submitter_ip=client_ip,
+        parent_submission_id=parent_submission_id,
     )
     db.add(submission)
     await db.commit()
@@ -125,6 +136,49 @@ async def count_pending(
         select(func.count(Submission.id)).where(Submission.status == "pending")
     )
     return {"count": result.scalar()}
+
+
+@router.get("/rework", response_model=List[ReworkSubmissionResponse])
+async def list_rework_submissions(
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint: list submissions that need rework."""
+    stmt = (
+        select(Submission)
+        .where(Submission.status == "rework")
+        .order_by(Submission.reviewed_at.desc())
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/rework/{submission_id}/download")
+async def download_rework_submission(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint: download a rework submission ZIP."""
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
+    if not submission or submission.status != "rework":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
+
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
+    if not archive_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
+
+    filename = f"{submission.title or 'archive'}.zip"
+
+    async def file_iterator():
+        async with aiofiles.open(archive_path, "rb") as f:
+            while chunk := await f.read(64 * 1024):
+                yield chunk
+
+    return StreamingResponse(
+        file_iterator(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
@@ -371,10 +425,16 @@ async def review_submission(
             detail="Cette soumission a déjà été traitée.",
         )
 
-    if review.action not in ("approve", "reject"):
+    if review.action not in ("approve", "reject", "rework"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Action invalide. Utilisez 'approve' ou 'reject'.",
+            detail="Action invalide. Utilisez 'approve', 'reject' ou 'rework'.",
+        )
+
+    if review.action == "rework" and not review.rework_comment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un commentaire est requis pour demander un rework.",
         )
 
     result = await db.execute(select(User).where(User.username == user.get("username")))
@@ -397,10 +457,32 @@ async def review_submission(
         submission.status = "approved"
         submission.reviewer_id = reviewer_id
         submission.reviewed_at = datetime.now(timezone.utc)
+
+        # If this is a re-submission, resolve the parent
+        if submission.parent_submission_id:
+            parent_result = await db.execute(
+                select(Submission).where(Submission.id == submission.parent_submission_id)
+            )
+            parent = parent_result.scalar_one_or_none()
+            if parent and parent.status == "rework":
+                storage.delete_archive(parent.archive_path)
+                if parent.cover_path:
+                    storage.delete_cover(parent.cover_path)
+                parent.status = "rework_resolved"
+
         await db.commit()
         await db.refresh(archive)
 
         return {"message": "Soumission approuvée. L'archive a été ajoutée à la bibliothèque.", "archive_id": archive.id}
+
+    elif review.action == "rework":
+        submission.status = "rework"
+        submission.reviewer_id = reviewer_id
+        submission.reviewed_at = datetime.now(timezone.utc)
+        submission.rework_comment = review.rework_comment
+        await db.commit()
+
+        return {"message": "Soumission marquée comme à retravailler."}
 
     else:  # reject
         storage.delete_archive(submission.archive_path)

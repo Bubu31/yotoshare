@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
+
+const route = useRoute()
+const parentSubmissionId = ref(route.query.rework ? parseInt(route.query.rework) : null)
 
 const file = ref(null)
 const pseudonym = ref('')
@@ -87,6 +91,9 @@ async function submit() {
   if (pseudonym.value.trim()) {
     formData.append('pseudonym', pseudonym.value.trim())
   }
+  if (parentSubmissionId.value) {
+    formData.append('parent_submission_id', parentSubmissionId.value)
+  }
 
   try {
     await axios.post('/api/submissions', formData, {
@@ -147,6 +154,12 @@ function reset() {
 
       <!-- Form -->
       <div v-else class="card p-6">
+        <!-- Rework banner -->
+        <div v-if="parentSubmissionId" class="mb-4 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-400 px-4 py-3 rounded-lg text-sm">
+          <i class="fas fa-redo mr-2"></i>
+          Vous re-soumettez une archive retravaillée (soumission #{{ parentSubmissionId }})
+        </div>
+
         <!-- Error -->
         <div v-if="error" class="mb-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
           <i class="fas fa-exclamation-circle mr-2"></i>
