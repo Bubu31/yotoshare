@@ -3,7 +3,8 @@
 import logging
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.config import get_settings
@@ -28,15 +29,16 @@ class PackDownloadRequest(BaseModel):
 @router.post("/download")
 async def get_archive_download(
     data: ArchiveDownloadRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
     """Called by discord-bot when a user clicks a download button. Returns embed data + download URL."""
-    archive = db.query(Archive).filter(Archive.id == data.archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == data.archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
-    token, _ = create_download_token(db, data.archive_id, data.discord_user_id, reusable=True)
+    token, _ = await create_download_token(db, data.archive_id, data.discord_user_id, reusable=True)
     download_url = get_download_url(token)
 
     cover_url = None
@@ -54,11 +56,12 @@ async def get_archive_download(
 @router.post("/pack-download")
 async def get_pack_download(
     data: PackDownloadRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
     """Called by discord-bot when a user clicks a pack download button. Returns embed data + download URL."""
-    pack = db.query(Pack).filter(Pack.id == data.pack_id).first()
+    result = await db.execute(select(Pack).where(Pack.id == data.pack_id))
+    pack = result.scalar_one_or_none()
     if not pack:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pack not found")
 

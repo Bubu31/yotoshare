@@ -5,9 +5,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.config import get_settings
-from app.database import SessionLocal
 
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -40,42 +41,39 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
-def authenticate_user(username: str, password: str) -> Optional[dict]:
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[dict]:
     from app.models import User
 
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.username == username).first()
-        if not user:
-            return None
-        if not verify_password(password, user.password_hash):
-            return None
+    result = await db.execute(
+        select(User).where(User.username == username).options(selectinload(User.role_rel))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
 
-        # Load permissions from role relationship
-        permissions = {}
-        role_name = "Éditeur"
-        role_id = user.role_id
+    permissions = {}
+    role_name = "Éditeur"
+    role_id = user.role_id
 
-        if user.role_rel:
-            role_name = user.role_rel.name
-            try:
-                permissions = json.loads(user.role_rel.permissions)
-            except (json.JSONDecodeError, TypeError):
-                permissions = {}
-        else:
-            # Fallback for users without role_id: map old role string
-            if user.role == "admin":
-                role_name = "Admin"
+    if user.role_rel:
+        role_name = user.role_rel.name
+        try:
+            permissions = json.loads(user.role_rel.permissions)
+        except (json.JSONDecodeError, TypeError):
+            permissions = {}
+    else:
+        if user.role == "admin":
+            role_name = "Admin"
 
-        return {
-            "username": user.username,
-            "role": user.role,
-            "role_id": role_id,
-            "role_name": role_name,
-            "permissions": permissions,
-        }
-    finally:
-        db.close()
+    return {
+        "username": user.username,
+        "role": user.role,
+        "role_id": role_id,
+        "role_name": role_name,
+        "permissions": permissions,
+    }
 
 
 async def get_current_user(

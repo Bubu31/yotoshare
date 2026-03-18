@@ -1,7 +1,8 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 import aiofiles
 
 logger = logging.getLogger(__name__)
@@ -19,14 +20,14 @@ router = APIRouter(prefix="/api/download", tags=["download"])
 @router.post("/token", response_model=DownloadTokenResponse)
 async def create_download_token(
     data: DownloadTokenCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "access")),
 ):
-    archive = db.query(Archive).filter(Archive.id == data.archive_id).first()
-    if not archive:
+    result = await db.execute(select(Archive).where(Archive.id == data.archive_id))
+    if not result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
-    token, expires_at = token_service.create_download_token(
+    token, expires_at = await token_service.create_download_token(
         db, data.archive_id, data.discord_user_id, data.expiry_seconds, data.reusable
     )
 
@@ -38,22 +39,21 @@ async def create_download_token(
 
 
 @router.get("/{token}")
-async def download_file(token: str, db: Session = Depends(get_db)):
-    archive = token_service.validate_token(db, token)
+async def download_file(token: str, db: AsyncSession = Depends(get_db)):
+    archive = await token_service.validate_token(db, token)
     if not archive:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid or expired download link"
         )
 
-    # Mark token as used only for single-use tokens
-    db_token = db.query(DownloadToken).filter(DownloadToken.token == token).first()
+    result = await db.execute(select(DownloadToken).where(DownloadToken.token == token))
+    db_token = result.scalar_one_or_none()
     if not db_token.reusable:
-        token_service.mark_token_used(db, token)
+        await token_service.mark_token_used(db, token)
 
-    # Increment download counter
     archive.download_count = (archive.download_count or 0) + 1
-    db.commit()
+    await db.commit()
 
     filepath = storage.get_archive_path(archive.archive_path)
     if not filepath:
@@ -87,8 +87,8 @@ async def download_file(token: str, db: Session = Depends(get_db)):
 
 @router.delete("/cleanup", status_code=status.HTTP_200_OK)
 async def cleanup_tokens(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    count = token_service.cleanup_expired_tokens(db)
+    count = await token_service.cleanup_expired_tokens(db)
     return {"deleted": count}

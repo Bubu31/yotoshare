@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.database import get_db
-from app.models import Submission, Archive
+from app.models import Submission, Archive, User
 from app.schemas import SubmissionResponse, SubmissionReviewRequest
 from app.auth import require_permission
 from app.services import storage
@@ -46,20 +47,18 @@ async def create_submission(
     request: Request,
     file: UploadFile = File(...),
     pseudonym: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Public endpoint: submit a MYO archive for moderation."""
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
 
-    # Validate extension
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Seuls les fichiers .zip sont acceptés.",
         )
 
-    # Save archive
     filename, file_size = await storage.save_archive(file)
 
     if file_size > MAX_FILE_SIZE:
@@ -69,24 +68,20 @@ async def create_submission(
             detail="Fichier trop volumineux (max 500 MB).",
         )
 
-    # Extract metadata and validate MYO format
     archive_path = storage.get_archive_path(filename)
     metadata = storage.extract_archive_metadata(archive_path)
 
     if not metadata.get("title") and not metadata.get("chapters"):
-        # No card-data.json found → not a valid MYO archive
         storage.delete_archive(filename)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Archive invalide : pas de card-data.json trouvé. Seules les archives MYO sont acceptées.",
         )
 
-    # Save cover thumbnail if present
     cover_filename = None
     if metadata.get("cover_data"):
         cover_filename = await storage.save_cover_from_bytes(metadata["cover_data"])
 
-    # Create submission
     submission = Submission(
         pseudonym=pseudonym.strip() if pseudonym else None,
         title=metadata.get("title"),
@@ -100,7 +95,7 @@ async def create_submission(
         submitter_ip=client_ip,
     )
     db.add(submission)
-    db.commit()
+    await db.commit()
 
     return {"message": "Votre archive a été soumise et sera examinée par un modérateur. Merci !"}
 
@@ -108,35 +103,36 @@ async def create_submission(
 @router.get("", response_model=List[SubmissionResponse])
 async def list_submissions(
     status_filter: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
 ):
-    """List submissions with optional status filter."""
-    query = db.query(Submission)
+    stmt = select(Submission)
     if status_filter:
-        query = query.filter(Submission.status == status_filter)
-    query = query.order_by(Submission.created_at.desc())
-    return query.all()
+        stmt = stmt.where(Submission.status == status_filter)
+    stmt = stmt.order_by(Submission.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
 
 @router.get("/submissions-count")
 async def count_pending(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
 ):
-    """Count pending submissions (for badge)."""
-    count = db.query(Submission).filter(Submission.status == "pending").count()
-    return {"count": count}
+    result = await db.execute(
+        select(func.count(Submission.id)).where(Submission.status == "pending")
+    )
+    return {"count": result.scalar()}
 
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
 async def get_submission(
     submission_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
 ):
-    """Get a single submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
     return submission
@@ -145,10 +141,10 @@ async def get_submission(
 @router.get("/{submission_id}/cover")
 async def get_submission_cover(
     submission_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Get submission cover image."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission or not submission.cover_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover introuvable")
 
@@ -164,11 +160,11 @@ async def get_submission_cover(
 @router.get("/{submission_id}/content")
 async def get_submission_content(
     submission_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
 ):
-    """Get submission archive content (chapters, audio info, icons)."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
@@ -199,7 +195,6 @@ async def get_submission_content(
             logger.exception("Error loading submission content")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    # Archive file not on disk — fall back to cached chapters_data
     logger.warning("Archive file not found for submission %d, using cached chapters_data", submission_id)
     chapters = []
     if submission.chapters_data:
@@ -232,11 +227,11 @@ async def get_submission_content(
 async def get_submission_audio(
     submission_id: int,
     chapter_key: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "access")),
 ):
-    """Stream a chapter's audio from a submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
@@ -276,10 +271,10 @@ async def get_submission_audio(
 async def get_submission_icon(
     submission_id: int,
     chapter_key: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Get a chapter's icon from a submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
@@ -288,11 +283,9 @@ async def get_submission_icon(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 
     try:
-        # Read icon directly from ZIP without extracting everything
         with zipfile.ZipFile(archive_path, "r") as zf:
             namelist = zf.namelist()
 
-            # Find card-data.json to get the icon filename for this chapter
             card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
             if not card_data_paths:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
@@ -312,16 +305,13 @@ async def get_submission_icon(
             if chapter is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
 
-            # Try to get icon filename from card-data
             icon_filename = chapter.get("display", {}).get("icon16x16") if chapter.get("display") else None
             if icon_filename and icon_filename.startswith("yoto:"):
                 icon_filename = None
 
-            # Find icon files in the ZIP (icons/ at root or nested like folder/icons/)
             icon_entries = [n for n in namelist if ("icons/" in n) and n.lower().endswith((".png", ".jpg", ".jpeg"))]
             icon_entries.sort()
 
-            # Try to match by card-data filename
             matched_entry = None
             if icon_filename:
                 for entry in icon_entries:
@@ -329,7 +319,6 @@ async def get_submission_icon(
                         matched_entry = entry
                         break
 
-            # Try to match by chapter_key prefix
             if not matched_entry:
                 for entry in icon_entries:
                     basename = entry.split("/")[-1]
@@ -337,7 +326,6 @@ async def get_submission_icon(
                         matched_entry = entry
                         break
 
-            # Fallback: match by index
             if not matched_entry and chapter_index is not None and chapter_index < len(icon_entries):
                 matched_entry = icon_entries[chapter_index]
 
@@ -358,11 +346,11 @@ async def get_submission_icon(
 async def review_submission(
     submission_id: int,
     review: SubmissionReviewRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("submissions", "modify")),
 ):
-    """Approve or reject a submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
@@ -378,13 +366,11 @@ async def review_submission(
             detail="Action invalide. Utilisez 'approve' ou 'reject'.",
         )
 
-    # Get reviewer user id from token
-    from app.models import User
-    reviewer = db.query(User).filter(User.username == user.get("username")).first()
+    result = await db.execute(select(User).where(User.username == user.get("username")))
+    reviewer = result.scalar_one_or_none()
     reviewer_id = reviewer.id if reviewer else None
 
     if review.action == "approve":
-        # Create an Archive from the submission
         archive = Archive(
             title=submission.title or "Sans titre",
             author=submission.pseudonym,
@@ -400,12 +386,12 @@ async def review_submission(
         submission.status = "approved"
         submission.reviewer_id = reviewer_id
         submission.reviewed_at = datetime.now(timezone.utc)
-        db.commit()
+        await db.commit()
+        await db.refresh(archive)
 
         return {"message": "Soumission approuvée. L'archive a été ajoutée à la bibliothèque.", "archive_id": archive.id}
 
     else:  # reject
-        # Delete files
         storage.delete_archive(submission.archive_path)
         if submission.cover_path:
             storage.delete_cover(submission.cover_path)
@@ -414,7 +400,7 @@ async def review_submission(
         submission.reviewer_id = reviewer_id
         submission.reviewed_at = datetime.now(timezone.utc)
         submission.rejection_reason = review.rejection_reason
-        db.commit()
+        await db.commit()
 
         return {"message": "Soumission rejetée."}
 
@@ -422,19 +408,18 @@ async def review_submission(
 @router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_submission(
     submission_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("submissions", "delete")),
 ):
-    """Delete a submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
-    # Only delete files if not approved (approved files belong to the archive now)
     if submission.status != "approved":
         storage.delete_archive(submission.archive_path)
         if submission.cover_path:
             storage.delete_cover(submission.cover_path)
 
-    db.delete(submission)
-    db.commit()
+    await db.delete(submission)
+    await db.commit()

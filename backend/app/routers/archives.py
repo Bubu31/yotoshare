@@ -7,7 +7,9 @@ import shutil
 import tempfile
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from PIL import Image
 from app.database import get_db
@@ -29,80 +31,60 @@ settings = get_settings()
 router = APIRouter(prefix="/api/archives", tags=["archives"])
 
 
-def get_or_create_categories(db: Session, category_names: List[str]) -> List[Category]:
-    """Get existing categories or create new ones by name"""
+async def get_or_create_categories(db: AsyncSession, category_names: List[str]) -> List[Category]:
+    """Get existing categories or create new ones by name (batch query)."""
+    names = [n.strip() for n in category_names if n.strip()]
+    if not names:
+        return []
+
+    result = await db.execute(select(Category).where(Category.name.in_(names)))
+    existing = {c.name: c for c in result.scalars().all()}
+
     categories = []
-    for name in category_names:
-        name = name.strip()
-        if not name:
-            continue
-        category = db.query(Category).filter(Category.name == name).first()
-        if not category:
-            category = Category(name=name, icon="fas fa-folder")
-            db.add(category)
-            db.flush()
-        categories.append(category)
+    for name in names:
+        if name not in existing:
+            cat = Category(name=name, icon="fas fa-folder")
+            db.add(cat)
+            await db.flush()
+            await db.refresh(cat)
+            existing[name] = cat
+        categories.append(existing[name])
     return categories
 
 
-def get_or_create_ages(db: Session, age_names: List[str]) -> List[Age]:
-    """Get existing ages or create new ones by name"""
+async def get_or_create_ages(db: AsyncSession, age_names: List[str]) -> List[Age]:
+    """Get existing ages or create new ones by name (batch query)."""
+    names = [n.strip() for n in age_names if n.strip()]
+    if not names:
+        return []
+
+    result = await db.execute(select(Age).where(Age.name.in_(names)))
+    existing = {a.name: a for a in result.scalars().all()}
+
     ages = []
-    for name in age_names:
-        name = name.strip()
-        if not name:
-            continue
-        age = db.query(Age).filter(Age.name == name).first()
-        if not age:
+    for name in names:
+        if name not in existing:
             age = Age(name=name, icon="fas fa-child")
             db.add(age)
-            db.flush()
-        ages.append(age)
+            await db.flush()
+            await db.refresh(age)
+            existing[name] = age
+        ages.append(existing[name])
     return ages
 
 
-@router.get("")
-async def list_archives(
-    category_id: Optional[int] = None,
-    age_id: Optional[int] = None,
-    search: Optional[str] = None,
-    sort: Optional[str] = "date-desc",
-    hide_published: Optional[bool] = False,
-    limit: int = 10,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-):
-    query = db.query(Archive)
-    if category_id:
-        query = query.filter(Archive.categories.any(Category.id == category_id))
-    if age_id:
-        query = query.filter(Archive.ages.any(Age.id == age_id))
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            (Archive.title.ilike(search_term)) | (Archive.author.ilike(search_term))
-        )
-    if hide_published:
-        query = query.filter(Archive.discord_post_id.is_(None))
-
-    total = query.count()
-
-    sort_map = {
-        "date-desc": Archive.created_at.desc(),
-        "date-asc": Archive.created_at.asc(),
-        "alpha-asc": Archive.title.asc(),
-        "alpha-desc": Archive.title.desc(),
-        "downloads-desc": Archive.download_count.desc(),
-        "downloads-asc": Archive.download_count.asc(),
-    }
-    order = sort_map.get(sort, Archive.created_at.desc())
-    items = query.order_by(order).offset(offset).limit(limit).all()
-
-    return {"items": items, "total": total}
+async def _load_archive(db: AsyncSession, archive_id: int) -> Archive | None:
+    """Load an archive with its relationships eagerly."""
+    result = await db.execute(
+        select(Archive)
+        .where(Archive.id == archive_id)
+        .options(selectinload(Archive.categories), selectinload(Archive.ages))
+    )
+    return result.scalar_one_or_none()
 
 
 def archive_to_response(archive: Archive) -> dict:
-    """Convert archive model to response dict with parsed chapters"""
+    """Convert archive model to response dict with parsed chapters."""
     chapters = None
     if archive.chapters_data:
         try:
@@ -130,18 +112,71 @@ def archive_to_response(archive: Archive) -> dict:
     }
 
 
+@router.get("")
+async def list_archives(
+    category_id: Optional[int] = None,
+    age_id: Optional[int] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = "date-desc",
+    hide_published: Optional[bool] = False,
+    limit: int = 10,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    base_stmt = select(Archive)
+    if category_id:
+        base_stmt = base_stmt.where(Archive.categories.any(Category.id == category_id))
+    if age_id:
+        base_stmt = base_stmt.where(Archive.ages.any(Age.id == age_id))
+    if search:
+        search_term = f"%{search}%"
+        base_stmt = base_stmt.where(
+            (Archive.title.ilike(search_term)) | (Archive.author.ilike(search_term))
+        )
+    if hide_published:
+        base_stmt = base_stmt.where(Archive.discord_post_id.is_(None))
+
+    total_result = await db.execute(
+        select(func.count(Archive.id)).where(*base_stmt.whereclause.clauses)
+        if base_stmt.whereclause is not None
+        else select(func.count(Archive.id))
+    )
+    total = total_result.scalar()
+
+    sort_map = {
+        "date-desc": Archive.created_at.desc(),
+        "date-asc": Archive.created_at.asc(),
+        "alpha-asc": Archive.title.asc(),
+        "alpha-desc": Archive.title.desc(),
+        "downloads-desc": Archive.download_count.desc(),
+        "downloads-asc": Archive.download_count.asc(),
+    }
+    order = sort_map.get(sort, Archive.created_at.desc())
+
+    items_result = await db.execute(
+        base_stmt
+        .options(selectinload(Archive.categories), selectinload(Archive.ages))
+        .order_by(order)
+        .offset(offset)
+        .limit(limit)
+    )
+    items = items_result.scalars().all()
+
+    return {"items": [archive_to_response(a) for a in items], "total": total}
+
+
 @router.get("/grid-visual")
 async def generate_grid_visual(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Generate a mosaic image of all covers from archives published on Discord."""
-    archives = (
-        db.query(Archive)
-        .filter(Archive.discord_post_id.isnot(None))
+    result = await db.execute(
+        select(Archive)
+        .where(Archive.discord_post_id.isnot(None))
         .order_by(Archive.title)
-        .all()
     )
+    archives = result.scalars().all()
 
     if not archives:
         raise HTTPException(
@@ -149,10 +184,9 @@ async def generate_grid_visual(
             detail="No published archives found",
         )
 
-    # Grid settings
     cell_w, cell_h = 150, 200
     padding = 8
-    bg_color = (26, 26, 46)  # #1a1a2e
+    bg_color = (26, 26, 46)
 
     count = len(archives)
     cols = min(max(int(math.ceil(math.sqrt(count))), 1), 10)
@@ -203,8 +237,8 @@ async def get_cover(filename: str):
 
 
 @router.get("/{archive_id}", response_model=ArchiveResponse)
-async def get_archive(archive_id: int, db: Session = Depends(get_db)):
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+async def get_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
+    archive = await _load_archive(db, archive_id)
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
     return archive_to_response(archive)
@@ -216,9 +250,9 @@ async def create_archive(
     title: Optional[str] = Form(None),
     author: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    categories: Optional[str] = Form(None),  # JSON array of category names
-    ages: Optional[str] = Form(None),  # JSON array of age names
-    db: Session = Depends(get_db),
+    categories: Optional[str] = Form(None),
+    ages: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     if not archive_file.filename.endswith(".zip"):
@@ -229,11 +263,9 @@ async def create_archive(
 
     archive_filename, file_size = await storage.save_archive(archive_file)
 
-    # Extract metadata from archive
     archive_path = storage.get_archive_path(archive_filename)
     metadata = storage.extract_archive_metadata(archive_path)
 
-    # Use extracted title if not provided
     final_title = title if title else metadata.get("title")
     if not final_title:
         raise HTTPException(
@@ -241,32 +273,28 @@ async def create_archive(
             detail="Title is required. It was not found in the archive and not provided."
         )
 
-    # Extract cover from archive
     cover_filename = None
     if metadata.get("cover_data"):
         cover_filename = await storage.save_cover_from_bytes(metadata["cover_data"])
 
-    # Parse and get/create categories
     category_list = []
     if categories:
         try:
             category_names = json.loads(categories)
             if isinstance(category_names, list):
-                category_list = get_or_create_categories(db, category_names)
+                category_list = await get_or_create_categories(db, category_names)
         except json.JSONDecodeError:
             pass
 
-    # Parse and get/create ages
     age_list = []
     if ages:
         try:
             age_names = json.loads(ages)
             if isinstance(age_names, list):
-                age_list = get_or_create_ages(db, age_names)
+                age_list = await get_or_create_ages(db, age_names)
         except json.JSONDecodeError:
             pass
 
-    # Prepare chapters data as JSON string
     chapters_json = None
     if metadata.get("chapters"):
         chapters_json = json.dumps(metadata["chapters"])
@@ -285,8 +313,10 @@ async def create_archive(
         ages=age_list,
     )
     db.add(archive)
-    db.commit()
-    db.refresh(archive)
+    await db.commit()
+    await db.refresh(archive)
+
+    archive = await _load_archive(db, archive.id)
     return archive_to_response(archive)
 
 
@@ -296,12 +326,12 @@ async def update_archive(
     title: Optional[str] = Form(None),
     author: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    categories: Optional[str] = Form(None),  # JSON array of category names
-    ages: Optional[str] = Form(None),  # JSON array of age names
-    db: Session = Depends(get_db),
+    categories: Optional[str] = Form(None),
+    ages: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    archive = await _load_archive(db, archive_id)
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -312,28 +342,26 @@ async def update_archive(
     if description is not None:
         archive.description = description
 
-    # Update categories if provided
     if categories is not None:
         try:
             category_names = json.loads(categories)
             if isinstance(category_names, list):
-                archive.categories = get_or_create_categories(db, category_names)
+                archive.categories = await get_or_create_categories(db, category_names)
         except json.JSONDecodeError:
             pass
 
-    # Update ages if provided
     if ages is not None:
         try:
             age_names = json.loads(ages)
             if isinstance(age_names, list):
-                archive.ages = get_or_create_ages(db, age_names)
+                archive.ages = await get_or_create_ages(db, age_names)
         except json.JSONDecodeError:
             pass
 
-    db.commit()
-    db.refresh(archive)
+    await db.commit()
 
-    # Sync with Discord if published
+    archive = await _load_archive(db, archive_id)
+
     if archive.discord_post_id:
         try:
             cover_url = None
@@ -347,7 +375,6 @@ async def update_archive(
                 except json.JSONDecodeError:
                     pass
 
-            # Get tag names (categories + ages)
             tag_names = []
             if archive.categories:
                 tag_names.extend([cat.name for cat in archive.categories])
@@ -369,7 +396,6 @@ async def update_archive(
             )
         except Exception as e:
             logger.warning("Failed to sync with Discord: %s", e)
-            # Continue even if Discord sync fails
 
     return archive_to_response(archive)
 
@@ -378,10 +404,11 @@ async def update_archive(
 async def update_archive_cover(
     archive_id: int,
     cover_file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -390,10 +417,10 @@ async def update_archive_cover(
 
     cover_filename = await storage.save_cover(cover_file)
     archive.cover_path = cover_filename
-    db.commit()
-    db.refresh(archive)
+    await db.commit()
 
-    # Sync with Discord if published
+    archive = await _load_archive(db, archive_id)
+
     if archive.discord_post_id:
         try:
             cover_url = f"{settings.base_url}/api/archives/cover/{archive.cover_path}"
@@ -433,27 +460,26 @@ async def update_archive_cover(
 @router.delete("/{archive_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_archive(
     archive_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "delete")),
 ):
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
-    # Delete Discord thread if it exists
     if archive.discord_post_id:
         try:
             delete_discord_thread(archive.discord_post_id)
         except Exception as e:
             logger.warning("Failed to delete Discord thread: %s", e)
-            # Continue with archive deletion even if Discord fails
 
     storage.delete_archive(archive.archive_path)
     if archive.cover_path:
         storage.delete_cover(archive.cover_path)
 
-    db.delete(archive)
-    db.commit()
+    await db.delete(archive)
+    await db.commit()
 
 
 # ============================================
@@ -461,7 +487,7 @@ async def delete_archive(
 # ============================================
 
 
-def sync_archive_metadata(archive: Archive, db: Session):
+async def sync_archive_metadata(archive: Archive, db: AsyncSession):
     """Re-extract and sync metadata from archive file to database."""
     archive_path = storage.get_archive_path(archive.archive_path)
     if not archive_path:
@@ -469,22 +495,19 @@ def sync_archive_metadata(archive: Archive, db: Session):
 
     metadata = storage.extract_archive_metadata(archive_path)
 
-    # Update database
     if metadata.get("chapters"):
         archive.chapters_data = json.dumps(metadata["chapters"])
         archive.chapters_count = len(metadata["chapters"])
     if metadata.get("total_duration") is not None:
         archive.total_duration = metadata["total_duration"]
 
-    # Update file size
     archive.file_size = os.path.getsize(archive_path)
 
-    db.commit()
-    db.refresh(archive)
+    await db.commit()
 
 
 def sync_discord_after_edit(archive: Archive):
-    """Sync with Discord after archive edit."""
+    """Sync with Discord after archive edit (relationships must be pre-loaded)."""
     if not archive.discord_post_id:
         return
 
@@ -526,11 +549,12 @@ def sync_discord_after_edit(archive: Archive):
 @router.get("/{archive_id}/content", response_model=ArchiveContent)
 async def get_archive_content(
     archive_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Get detailed archive content including chapters with audio info."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -572,11 +596,11 @@ async def get_archive_content(
 async def update_chapters(
     archive_id: int,
     request: ChaptersUpdateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Update chapters (reorder, rename, delete)."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    archive = await _load_archive(db, archive_id)
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -588,8 +612,8 @@ async def update_chapters(
         chapters_data = [ch.model_dump() for ch in request.chapters]
         archive_editor.update_chapters(archive_path, chapters_data)
 
-        # Sync metadata back to database
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -605,11 +629,12 @@ async def update_archive_cover_in_zip(
     crop_y: int = Form(0),
     crop_width: int = Form(0),
     crop_height: int = Form(0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Replace the cover image inside the archive ZIP file."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -622,16 +647,10 @@ async def update_archive_cover_in_zip(
 
         crop_data = None
         if crop_width > 0 and crop_height > 0:
-            crop_data = {
-                "x": crop_x,
-                "y": crop_y,
-                "width": crop_width,
-                "height": crop_height,
-            }
+            crop_data = {"x": crop_x, "y": crop_y, "width": crop_width, "height": crop_height}
 
         archive_editor.replace_cover_in_archive(archive_path, image_data, crop_data)
 
-        # Also update the thumbnail in the database
         metadata = storage.extract_archive_metadata(archive_path)
         if metadata.get("cover_data"):
             if archive.cover_path:
@@ -639,11 +658,11 @@ async def update_archive_cover_in_zip(
             cover_filename = await storage.save_cover_from_bytes(metadata["cover_data"])
             archive.cover_path = cover_filename
 
-        # Update file size
         archive.file_size = os.path.getsize(archive_path)
 
-        db.commit()
-        db.refresh(archive)
+        await db.commit()
+
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -655,10 +674,11 @@ async def update_archive_cover_in_zip(
 async def get_chapter_icon(
     archive_id: int,
     chapter_key: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get a chapter's icon image."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -683,11 +703,12 @@ async def update_chapter_icon(
     archive_id: int,
     chapter_key: str,
     icon_file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Replace a chapter's icon."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -699,13 +720,11 @@ async def update_chapter_icon(
         image_data = await icon_file.read()
         archive_editor.replace_chapter_icon_in_archive(archive_path, chapter_key, image_data)
 
-        # Update file size
         archive.file_size = os.path.getsize(archive_path)
-        db.commit()
-        db.refresh(archive)
+        await db.commit()
 
-        # Re-sync metadata
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
 
         return archive_to_response(archive)
     except ValueError as e:
@@ -720,11 +739,12 @@ async def get_chapter_waveform(
     archive_id: int,
     chapter_key: str,
     samples: int = 800,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Get waveform data for a chapter's audio."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -757,11 +777,12 @@ async def get_chapter_waveform(
 async def get_chapter_audio(
     archive_id: int,
     chapter_key: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Stream a chapter's audio for preview."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -776,13 +797,11 @@ async def get_chapter_audio(
 
         temp_dir, audio_path, editor = result
 
-        # Read audio file into memory then cleanup
         with open(audio_path, "rb") as f:
             audio_data = f.read()
 
         editor.cleanup()
 
-        # Determine content type based on file extension
         ext = os.path.splitext(audio_path)[1].lower()
         content_type = "audio/mpeg"
         if ext == ".m4a":
@@ -804,11 +823,12 @@ async def split_chapter(
     archive_id: int,
     chapter_key: str,
     request: SplitRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Split a chapter at specific timestamps."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -821,7 +841,6 @@ async def split_chapter(
             card_data = editor.read_card_data()
             chapters = card_data.get("content", {}).get("chapters", [])
 
-            # Find the chapter to split
             chapter_idx = None
             chapter = None
             for i, ch in enumerate(chapters):
@@ -833,7 +852,6 @@ async def split_chapter(
             if chapter is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found")
 
-            # Get audio file
             audio_file = chapter.get("tracks", [{}])[0].get("file")
             if not audio_file:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter has no audio")
@@ -842,32 +860,26 @@ async def split_chapter(
             if not audio_path:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
-            # Split the audio
             split_dir = tempfile.mkdtemp(prefix="yoto_split_")
             try:
                 segment_files = audio_processor.split_audio(
                     audio_path, request.split_points, split_dir
                 )
 
-                # Create new chapters from segments
                 new_chapters = []
                 base_title = chapter.get("title", "Chapter")
 
                 for i, segment_file in enumerate(segment_files):
-                    # Generate new key
                     import uuid
                     new_key = f"{chapter_key}_{i}" if i > 0 else chapter_key
 
-                    # Copy segment to audio folder
                     ext = os.path.splitext(audio_file)[1]
                     new_audio_filename = f"{new_key}{ext}"
                     new_audio_path = os.path.join(editor.get_audio_path(), new_audio_filename)
                     shutil.copy(segment_file, new_audio_path)
 
-                    # Get duration of new segment
                     duration_ms = audio_processor.get_audio_duration(new_audio_path)
 
-                    # Create new chapter entry
                     new_chapter = {
                         "key": new_key,
                         "title": f"{base_title} (Part {i + 1})" if len(segment_files) > 1 else base_title,
@@ -875,7 +887,6 @@ async def split_chapter(
                         "tracks": [{"file": new_audio_filename}],
                     }
 
-                    # Copy other properties from original
                     if chapter.get("overlayLabel"):
                         new_chapter["overlayLabel"] = chapter["overlayLabel"]
                     if chapter.get("display"):
@@ -883,15 +894,12 @@ async def split_chapter(
 
                     new_chapters.append(new_chapter)
 
-                # Remove original audio file if it's different from the first segment
                 if audio_path != new_audio_path:
                     os.remove(audio_path)
 
-                # Replace original chapter with new chapters
                 chapters = chapters[:chapter_idx] + new_chapters + chapters[chapter_idx + 1:]
                 card_data["content"]["chapters"] = chapters
 
-                # Update total duration
                 total_duration = sum(ch.get("duration", 0) for ch in chapters)
                 if "metadata" in card_data and "media" in card_data["metadata"]:
                     card_data["metadata"]["media"]["duration"] = total_duration
@@ -902,8 +910,8 @@ async def split_chapter(
             finally:
                 shutil.rmtree(split_dir, ignore_errors=True)
 
-        # Sync metadata
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -919,11 +927,12 @@ async def trim_chapter(
     archive_id: int,
     chapter_key: str,
     request: TrimRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Trim a chapter's audio (keep or delete selection)."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -936,12 +945,10 @@ async def trim_chapter(
             card_data = editor.read_card_data()
             chapters = card_data.get("content", {}).get("chapters", [])
 
-            # Find the chapter
             chapter = next((ch for ch in chapters if ch.get("key") == chapter_key), None)
             if not chapter:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found")
 
-            # Get audio file
             audio_file = chapter.get("tracks", [{}])[0].get("file")
             if not audio_file:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter has no audio")
@@ -950,22 +957,15 @@ async def trim_chapter(
             if not audio_path:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
-            # Trim the audio
             trimmed_path = audio_processor.trim_audio(
-                audio_path,
-                request.start_ms,
-                request.end_ms,
-                request.mode
+                audio_path, request.start_ms, request.end_ms, request.mode
             )
 
-            # Replace original with trimmed
             shutil.move(trimmed_path, audio_path)
 
-            # Update duration
             new_duration = audio_processor.get_audio_duration(audio_path)
             chapter["duration"] = new_duration
 
-            # Update total duration
             total_duration = sum(ch.get("duration", 0) for ch in chapters)
             if "metadata" in card_data and "media" in card_data["metadata"]:
                 card_data["metadata"]["media"]["duration"] = total_duration
@@ -973,8 +973,8 @@ async def trim_chapter(
             editor.write_card_data(card_data)
             editor.save()
 
-        # Sync metadata
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -989,14 +989,15 @@ async def trim_chapter(
 async def merge_chapters(
     archive_id: int,
     request: MergeRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Merge multiple chapters into one."""
     if len(request.chapter_keys) < 2:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least 2 chapters required")
 
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -1009,7 +1010,6 @@ async def merge_chapters(
             card_data = editor.read_card_data()
             chapters = card_data.get("content", {}).get("chapters", [])
 
-            # Find chapters to merge (in order)
             chapters_to_merge = []
             chapter_indices = []
             for key in request.chapter_keys:
@@ -1022,7 +1022,6 @@ async def merge_chapters(
             if len(chapters_to_merge) != len(request.chapter_keys):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Some chapters not found")
 
-            # Get audio files
             audio_paths = []
             for ch in chapters_to_merge:
                 audio_file = ch.get("tracks", [{}])[0].get("file")
@@ -1039,7 +1038,6 @@ async def merge_chapters(
                     )
                 audio_paths.append(audio_path)
 
-            # Merge audio files
             first_audio_file = chapters_to_merge[0].get("tracks", [{}])[0].get("file")
             ext = os.path.splitext(first_audio_file)[1]
             merged_filename = f"merged_{request.chapter_keys[0]}{ext}"
@@ -1047,15 +1045,12 @@ async def merge_chapters(
 
             audio_processor.merge_audio(audio_paths, merged_path)
 
-            # Delete old audio files
             for audio_path in audio_paths:
                 if os.path.exists(audio_path):
                     os.remove(audio_path)
 
-            # Get merged duration
             merged_duration = audio_processor.get_audio_duration(merged_path)
 
-            # Create merged chapter
             merged_chapter = {
                 "key": request.chapter_keys[0],
                 "title": request.new_title,
@@ -1063,12 +1058,10 @@ async def merge_chapters(
                 "tracks": [{"file": merged_filename}],
             }
 
-            # Keep icon from first chapter if exists
             first_chapter = chapters_to_merge[0]
             if first_chapter.get("display"):
                 merged_chapter["display"] = first_chapter["display"].copy()
 
-            # Remove old chapters and insert merged one
             first_idx = min(chapter_indices)
             new_chapters = []
             removed_indices = set(chapter_indices)
@@ -1081,7 +1074,6 @@ async def merge_chapters(
 
             card_data["content"]["chapters"] = new_chapters
 
-            # Update total duration
             total_duration = sum(ch.get("duration", 0) for ch in new_chapters)
             if "metadata" in card_data and "media" in card_data["metadata"]:
                 card_data["metadata"]["media"]["duration"] = total_duration
@@ -1089,8 +1081,8 @@ async def merge_chapters(
             editor.write_card_data(card_data)
             editor.save()
 
-        # Sync metadata
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -1106,11 +1098,12 @@ async def add_chapter(
     archive_id: int,
     audio_file: UploadFile = File(...),
     title: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Add a new chapter with an audio file to the archive."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -1129,7 +1122,8 @@ async def add_chapter(
             chapter_title,
         )
 
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -1143,11 +1137,12 @@ async def replace_chapter_audio(
     archive_id: int,
     chapter_key: str,
     audio_file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Replace the audio file of a chapter."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -1165,7 +1160,8 @@ async def replace_chapter_audio(
             audio_file.filename,
         )
 
-        sync_archive_metadata(archive, db)
+        await sync_archive_metadata(archive, db)
+        archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
         return archive_to_response(archive)
@@ -1179,11 +1175,12 @@ async def replace_chapter_audio(
 @router.get("/{archive_id}/nfo")
 async def get_nfo(
     archive_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Get the NFO file content."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -1204,11 +1201,12 @@ async def get_nfo(
 async def update_nfo(
     archive_id: int,
     request: NfoUpdateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("archives", "modify")),
 ):
     """Update the NFO file content."""
-    archive = db.query(Archive).filter(Archive.id == archive_id).first()
+    result = await db.execute(select(Archive).where(Archive.id == archive_id))
+    archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
@@ -1219,11 +1217,10 @@ async def update_nfo(
     try:
         archive_editor.update_nfo(archive_path, request.content)
 
-        # Update file size
         archive.file_size = os.path.getsize(archive_path)
-        db.commit()
-        db.refresh(archive)
+        await db.commit()
 
+        archive = await _load_archive(db, archive_id)
         return archive_to_response(archive)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

@@ -11,7 +11,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user, require_permission
 from app.config import get_settings
@@ -59,6 +61,13 @@ def _pack_to_response(pack: Pack) -> dict:
     }
 
 
+async def _load_pack(db: AsyncSession, pack_id: int) -> Pack | None:
+    result = await db.execute(
+        select(Pack).where(Pack.id == pack_id).options(selectinload(Pack.archives))
+    )
+    return result.scalar_one_or_none()
+
+
 # ── Static routes (MUST be before /{pack_id} to avoid shadowing) ──
 
 
@@ -67,23 +76,24 @@ VALID_ASSET_TYPES = ("background", "mascot")
 
 @router.get("/assets")
 async def list_assets(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
     """List current pack assets (background + mascot)."""
-    assets = db.query(PackAsset).all()
-    result = {"background": None, "mascot": None}
+    result = await db.execute(select(PackAsset))
+    assets = result.scalars().all()
+    asset_map = {"background": None, "mascot": None}
     for asset in assets:
-        if asset.asset_type in result:
-            result[asset.asset_type] = asset.filename
-    return result
+        if asset.asset_type in asset_map:
+            asset_map[asset.asset_type] = asset.filename
+    return asset_map
 
 
 @router.post("/assets/{asset_type}")
 async def upload_asset(
     asset_type: str,
     image: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "modify")),
 ):
     """Upload a pack asset (background or mascot)."""
@@ -98,21 +108,19 @@ async def upload_asset(
 
     os.makedirs(settings.pack_assets_path, exist_ok=True)
 
-    # Delete old file if exists
-    existing = db.query(PackAsset).filter(PackAsset.asset_type == asset_type).first()
+    result = await db.execute(select(PackAsset).where(PackAsset.asset_type == asset_type))
+    existing = result.scalar_one_or_none()
     if existing:
         old_path = os.path.join(settings.pack_assets_path, existing.filename)
         if os.path.exists(old_path):
             os.remove(old_path)
 
     if asset_type == "background":
-        # Save at original size (template), JPEG
         img = img.convert("RGB")
         filename = f"{uuid.uuid4()}.jpg"
         filepath = os.path.join(settings.pack_assets_path, filename)
         img.save(filepath, "JPEG", quality=95)
     else:
-        # Mascot: max 400px height, keep transparency, save as PNG
         if img.height > 400:
             ratio = 400 / img.height
             img = img.resize((int(img.width * ratio), 400), Image.Resampling.LANCZOS)
@@ -127,7 +135,7 @@ async def upload_asset(
     else:
         db.add(PackAsset(asset_type=asset_type, filename=filename))
 
-    db.commit()
+    await db.commit()
 
     return {"asset_type": asset_type, "filename": filename}
 
@@ -135,14 +143,15 @@ async def upload_asset(
 @router.delete("/assets/{asset_type}", status_code=204)
 async def delete_asset(
     asset_type: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "delete")),
 ):
     """Delete a pack asset."""
     if asset_type not in VALID_ASSET_TYPES:
         raise HTTPException(status_code=400, detail="Type invalide (background ou mascot)")
 
-    asset = db.query(PackAsset).filter(PackAsset.asset_type == asset_type).first()
+    result = await db.execute(select(PackAsset).where(PackAsset.asset_type == asset_type))
+    asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset introuvable")
 
@@ -150,17 +159,18 @@ async def delete_asset(
     if os.path.exists(filepath):
         os.remove(filepath)
 
-    db.delete(asset)
-    db.commit()
+    await db.delete(asset)
+    await db.commit()
 
 
 @router.get("/assets/{asset_type}/image")
-async def get_asset_image(asset_type: str, db: Session = Depends(get_db)):
+async def get_asset_image(asset_type: str, db: AsyncSession = Depends(get_db)):
     """Serve a pack asset image (no auth)."""
     if asset_type not in VALID_ASSET_TYPES:
         raise HTTPException(status_code=400, detail="Type invalide")
 
-    asset = db.query(PackAsset).filter(PackAsset.asset_type == asset_type).first()
+    result = await db.execute(select(PackAsset).where(PackAsset.asset_type == asset_type))
+    asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset introuvable")
 
@@ -173,13 +183,13 @@ async def get_asset_image(asset_type: str, db: Session = Depends(get_db)):
 
 
 @router.get("/signed-download/{signed_token}")
-async def signed_download(signed_token: str, db: Session = Depends(get_db)):
+async def signed_download(signed_token: str, db: AsyncSession = Depends(get_db)):
     """Download all archives in a pack via a time-limited signed URL (no auth)."""
     pack_id = validate_pack_signed_token(signed_token)
     if pack_id is None:
         raise HTTPException(status_code=403, detail="Lien invalide ou expiré")
 
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
@@ -200,7 +210,7 @@ async def signed_download(signed_token: str, db: Session = Depends(get_db)):
             zf.write(archive_file, f"{safe_name}{ext}")
             archive.download_count = (archive.download_count or 0) + 1
 
-    db.commit()
+    await db.commit()
 
     buffer.seek(0)
     safe_pack_name = "".join(
@@ -218,9 +228,12 @@ async def signed_download(signed_token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/by-token/{token}/download-all")
-async def download_all(token: str, db: Session = Depends(get_db)):
+async def download_all(token: str, db: AsyncSession = Depends(get_db)):
     """Download all archives in a pack as a single ZIP (no auth)."""
-    pack = db.query(Pack).filter(Pack.token == token).first()
+    result = await db.execute(
+        select(Pack).where(Pack.token == token).options(selectinload(Pack.archives))
+    )
+    pack = result.scalar_one_or_none()
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
@@ -234,25 +247,21 @@ async def download_all(token: str, db: Session = Depends(get_db)):
     if not pack.archives:
         raise HTTPException(status_code=404, detail="Pack vide")
 
-    # Build ZIP in memory with ZIP_STORED (archives are already compressed)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
         for archive in pack.archives:
             archive_file = get_archive_path(archive.archive_path)
             if not archive_file:
                 continue
-            # Use archive title as filename in the pack zip
             safe_name = "".join(
                 c if c.isalnum() or c in " -_.()" else "_"
                 for c in (archive.title or f"archive_{archive.id}")
             )
             ext = os.path.splitext(archive.archive_path)[1] or ".zip"
             zf.write(archive_file, f"{safe_name}{ext}")
-
-            # Increment download count
             archive.download_count = (archive.download_count or 0) + 1
 
-    db.commit()
+    await db.commit()
 
     buffer.seek(0)
     safe_pack_name = "".join(
@@ -275,26 +284,25 @@ async def download_all(token: str, db: Session = Depends(get_db)):
 @router.post("", response_model=PackResponse)
 async def create_pack(
     data: PackCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
     if not data.archive_ids:
         raise HTTPException(status_code=400, detail="Au moins une archive requise")
 
-    archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
+    result = await db.execute(select(Archive).where(Archive.id.in_(data.archive_ids)))
+    archives = result.scalars().all()
     if len(archives) != len(data.archive_ids):
         raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
 
-    # Order archives by the request order
     archive_map = {a.id: a for a in archives}
     ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
 
     token = secrets.token_hex(32)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
 
-    # Generate OG image
     cover_filenames = [a.cover_path for a in ordered_archives if a.cover_path]
-    image_filename = save_pack_image(data.name, cover_filenames, data.description, db=db)
+    image_filename = await save_pack_image(data.name, cover_filenames, data.description, db=db)
 
     pack = Pack(
         name=data.name,
@@ -302,21 +310,20 @@ async def create_pack(
         token=token,
         image_path=image_filename,
         expires_at=expires_at,
-        created_by=None,  # Could resolve user id from JWT if needed
+        created_by=None,
     )
     db.add(pack)
-    db.flush()
+    await db.flush()
 
-    # Insert associations with position
     for pos, archive in enumerate(ordered_archives):
-        db.execute(
+        await db.execute(
             pack_archives.insert().values(
                 pack_id=pack.id, archive_id=archive.id, position=pos
             )
         )
 
-    db.commit()
-    db.refresh(pack)
+    await db.commit()
+    pack = await _load_pack(db, pack.id)
 
     return _pack_to_response(pack)
 
@@ -325,22 +332,30 @@ async def create_pack(
 async def list_packs(
     limit: int = 10,
     offset: int = 0,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
-    query = db.query(Pack).order_by(Pack.created_at.desc())
-    total = query.count()
-    packs = query.offset(offset).limit(limit).all()
+    count_result = await db.execute(select(func.count(Pack.id)))
+    total = count_result.scalar()
+
+    result = await db.execute(
+        select(Pack)
+        .options(selectinload(Pack.archives))
+        .order_by(Pack.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    packs = result.scalars().all()
     return {"items": [_pack_to_response(p) for p in packs], "total": total}
 
 
 @router.get("/{pack_id}", response_model=PackResponse)
 async def get_pack(
     pack_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
     return _pack_to_response(pack)
@@ -350,10 +365,10 @@ async def get_pack(
 async def update_pack(
     pack_id: int,
     data: PackUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "modify")),
 ):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
@@ -366,33 +381,32 @@ async def update_pack(
         if not data.archive_ids:
             raise HTTPException(status_code=400, detail="Au moins une archive requise")
 
-        archives = db.query(Archive).filter(Archive.id.in_(data.archive_ids)).all()
+        result = await db.execute(select(Archive).where(Archive.id.in_(data.archive_ids)))
+        archives = result.scalars().all()
         if len(archives) != len(data.archive_ids):
             raise HTTPException(status_code=404, detail="Une ou plusieurs archives introuvables")
 
-        # Clear existing associations
-        db.execute(pack_archives.delete().where(pack_archives.c.pack_id == pack.id))
+        await db.execute(pack_archives.delete().where(pack_archives.c.pack_id == pack.id))
 
         archive_map = {a.id: a for a in archives}
         ordered_archives = [archive_map[aid] for aid in data.archive_ids if aid in archive_map]
 
         for pos, archive in enumerate(ordered_archives):
-            db.execute(
+            await db.execute(
                 pack_archives.insert().values(
                     pack_id=pack.id, archive_id=archive.id, position=pos
                 )
             )
 
-    # Regenerate image
     if pack.image_path:
         delete_pack_image(pack.image_path)
 
-    db.refresh(pack)
+    pack = await _load_pack(db, pack_id)
     cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
-    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
+    pack.image_path = await save_pack_image(pack.name, cover_filenames, pack.description, db=db)
 
-    db.commit()
-    db.refresh(pack)
+    await db.commit()
+    pack = await _load_pack(db, pack_id)
 
     return _pack_to_response(pack)
 
@@ -400,16 +414,16 @@ async def update_pack(
 @router.post("/{pack_id}/reshare", response_model=PackResponse)
 async def reshare_pack(
     pack_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "access")),
 ):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
     pack.expires_at = datetime.now(timezone.utc) + timedelta(seconds=PACK_EXPIRY_SECONDS)
-    db.commit()
-    db.refresh(pack)
+    await db.commit()
+    pack = await _load_pack(db, pack_id)
 
     return _pack_to_response(pack)
 
@@ -417,11 +431,11 @@ async def reshare_pack(
 @router.post("/{pack_id}/regenerate-image", response_model=PackResponse)
 async def regenerate_pack_image(
     pack_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "modify")),
 ):
     """Regenerate the OG image for a pack."""
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
@@ -429,10 +443,10 @@ async def regenerate_pack_image(
         delete_pack_image(pack.image_path)
 
     cover_filenames = [a.cover_path for a in pack.archives if a.cover_path]
-    pack.image_path = save_pack_image(pack.name, cover_filenames, pack.description, db=db)
+    pack.image_path = await save_pack_image(pack.name, cover_filenames, pack.description, db=db)
 
-    db.commit()
-    db.refresh(pack)
+    await db.commit()
+    pack = await _load_pack(db, pack_id)
 
     return _pack_to_response(pack)
 
@@ -440,10 +454,10 @@ async def regenerate_pack_image(
 @router.delete("/{pack_id}", status_code=204)
 async def delete_pack(
     pack_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("packs", "delete")),
 ):
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    pack = await _load_pack(db, pack_id)
     if not pack:
         raise HTTPException(status_code=404, detail="Pack introuvable")
 
@@ -457,14 +471,15 @@ async def delete_pack(
         except Exception as e:
             logger.warning("Failed to delete Discord thread for pack %s: %s", pack.id, e)
 
-    db.delete(pack)
-    db.commit()
+    await db.delete(pack)
+    await db.commit()
 
 
 @router.get("/{pack_id}/image")
-async def get_pack_og_image(pack_id: int, db: Session = Depends(get_db)):
+async def get_pack_og_image(pack_id: int, db: AsyncSession = Depends(get_db)):
     """Serve the OG image for crawlers (no auth required)."""
-    pack = db.query(Pack).filter(Pack.id == pack_id).first()
+    result = await db.execute(select(Pack).where(Pack.id == pack_id))
+    pack = result.scalar_one_or_none()
     if not pack or not pack.image_path:
         raise HTTPException(status_code=404, detail="Image introuvable")
 

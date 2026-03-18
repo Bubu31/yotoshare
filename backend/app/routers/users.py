@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import List
 from app.database import get_db
 from app.models import User, Role
@@ -24,40 +26,46 @@ def user_to_response(user: User) -> dict:
     }
 
 
+async def _load_user(db: AsyncSession, user_id: int) -> User | None:
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.role_rel))
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("", response_model=List[UserResponse])
 async def list_users(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("users", "access")),
 ):
-    users = db.query(User).order_by(User.created_at).all()
-    return [user_to_response(u) for u in users]
+    result = await db.execute(
+        select(User).order_by(User.created_at).options(selectinload(User.role_rel))
+    )
+    return [user_to_response(u) for u in result.scalars().all()]
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: UserCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("users", "modify")),
 ):
-    # Validate role_id exists
-    role = db.query(Role).filter(Role.id == data.role_id).first()
+    result = await db.execute(select(Role).where(Role.id == data.role_id))
+    role = result.scalar_one_or_none()
     if not role:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Rôle introuvable",
         )
 
-    existing = db.query(User).filter(User.username == data.username).first()
-    if existing:
+    result = await db.execute(select(User).where(User.username == data.username))
+    if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already exists",
         )
 
-    # Map role_id to old role string for backwards compat
-    role_str = "editor"
-    if role.name == "Admin":
-        role_str = "admin"
+    role_str = "admin" if role.name == "Admin" else "editor"
 
     user = User(
         username=data.username,
@@ -66,8 +74,10 @@ async def create_user(
         role_id=data.role_id,
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
+
+    user = await _load_user(db, user.id)
     return user_to_response(user)
 
 
@@ -75,39 +85,42 @@ async def create_user(
 async def update_user(
     user_id: int,
     data: UserUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("users", "modify")),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     if data.role_id is not None:
-        role = db.query(Role).filter(Role.id == data.role_id).first()
+        result = await db.execute(select(Role).where(Role.id == data.role_id))
+        role = result.scalar_one_or_none()
         if not role:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Rôle introuvable",
             )
         user.role_id = data.role_id
-        # Update old role string for backwards compat
         user.role = "admin" if role.name == "Admin" else "editor"
 
     if data.password is not None:
         user.password_hash = hash_password(data.password)
 
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+
+    user = await _load_user(db, user_id)
     return user_to_response(user)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("users", "delete")),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -117,5 +130,5 @@ async def delete_user(
             detail="Cannot delete your own account",
         )
 
-    db.delete(user)
-    db.commit()
+    await db.delete(user)
+    await db.commit()

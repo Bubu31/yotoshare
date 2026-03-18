@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import DownloadToken, Pack
@@ -40,8 +42,13 @@ body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-co
 
 
 @router.get("/share/{token}", response_class=HTMLResponse)
-async def share_page(token: str, db: Session = Depends(get_db)):
-    db_token = db.query(DownloadToken).filter(DownloadToken.token == token).first()
+async def share_page(token: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(DownloadToken)
+        .where(DownloadToken.token == token)
+        .options(selectinload(DownloadToken.archive))
+    )
+    db_token = result.scalar_one_or_none()
 
     if not db_token:
         return _error_page("Lien invalide")
@@ -109,8 +116,13 @@ body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-co
 
 
 @router.get("/pack/{token}", response_class=HTMLResponse)
-async def pack_share_page(token: str, db: Session = Depends(get_db)):
-    pack = db.query(Pack).filter(Pack.token == token).first()
+async def pack_share_page(token: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Pack)
+        .where(Pack.token == token)
+        .options(selectinload(Pack.archives))
+    )
+    pack = result.scalar_one_or_none()
 
     if not pack:
         return _error_page("Pack introuvable")
@@ -128,7 +140,6 @@ async def pack_share_page(token: str, db: Session = Depends(get_db)):
     download_all_url = f"/api/packs/by-token/{html.escape(token)}/download-all"
     share_url = f"{settings.base_url}/pack/{html.escape(token)}"
 
-    # OG image
     og_image = ""
     if pack.image_path:
         og_image_url = f"{settings.base_url}/api/packs/{pack.id}/image"
@@ -138,14 +149,12 @@ async def pack_share_page(token: str, db: Session = Depends(get_db)):
             f'<meta name="twitter:image" content="{og_image_url}">'
         )
 
-    # Build archive list HTML
     archives_html = ""
     for archive in pack.archives:
         a_title = html.escape(archive.title or "Archive")
         a_author = html.escape(archive.author or "")
 
-        # Create a reusable 30-day download token for each archive
-        dl_token, _ = create_download_token(
+        dl_token, _ = await create_download_token(
             db, archive.id, expiry_seconds=2592000, reusable=True
         )
         dl_url = f"/api/download/{dl_token}"

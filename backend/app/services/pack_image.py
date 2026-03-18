@@ -342,7 +342,7 @@ def generate_pack_image(
     return img.convert("RGB")
 
 
-def save_pack_image(
+async def save_pack_image(
     pack_name: str,
     cover_filenames: list[str],
     description: Optional[str] = None,
@@ -356,7 +356,9 @@ def save_pack_image(
         mascot_path = None
         if db is not None:
             from app.models import PackAsset
-            for asset in db.query(PackAsset).all():
+            from sqlalchemy import select
+            result = await db.execute(select(PackAsset))
+            for asset in result.scalars().all():
                 asset_filepath = os.path.join(settings.pack_assets_path, asset.filename)
                 if asset.asset_type == "background":
                     background_path = asset_filepath

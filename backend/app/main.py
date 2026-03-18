@@ -60,17 +60,15 @@ app.include_router(service_router)
 @app.get("/api/health")
 async def health_check():
     from fastapi.responses import JSONResponse
-    from app.database import SessionLocal
+    from sqlalchemy import text
+    from app.database import AsyncSessionLocal
 
     health_status = {"status": "healthy", "checks": {}}
     is_healthy = True
 
-    # Check database connectivity
     try:
-        from sqlalchemy import text
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
         health_status["checks"]["database"] = "ok"
     except Exception as e:
         health_status["checks"]["database"] = f"error: {str(e)}"

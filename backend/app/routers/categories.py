@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.database import get_db
 from app.models import Category
@@ -11,13 +12,15 @@ router = APIRouter(prefix="/api/categories", tags=["categories"])
 
 
 @router.get("", response_model=List[CategoryResponse])
-async def list_categories(db: Session = Depends(get_db)):
-    return db.query(Category).all()
+async def list_categories(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Category))
+    return result.scalars().all()
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
-async def get_category(category_id: int, db: Session = Depends(get_db)):
-    category = db.query(Category).filter(Category.id == category_id).first()
+async def get_category(category_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Category).where(Category.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
     return category
@@ -26,18 +29,18 @@ async def get_category(category_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
     data: CategoryCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("categories", "modify")),
 ):
-    existing = db.query(Category).filter(Category.name == data.name).first()
-    if existing:
+    result = await db.execute(select(Category).where(Category.name == data.name))
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category already exists")
+
     category = Category(**data.model_dump())
     db.add(category)
-    db.commit()
-    db.refresh(category)
+    await db.commit()
+    await db.refresh(category)
 
-    # Create corresponding Discord forum tag with file cabinet emoji
     create_forum_tag(category.name, "🗄️")
 
     return category
@@ -47,34 +50,36 @@ async def create_category(
 async def update_category(
     category_id: int,
     data: CategoryUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("categories", "modify")),
 ):
-    category = db.query(Category).filter(Category.id == category_id).first()
+    result = await db.execute(select(Category).where(Category.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-    update_data = data.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
+
+    for key, value in data.model_dump(exclude_unset=True).items():
         setattr(category, key, value)
-    db.commit()
-    db.refresh(category)
+
+    await db.commit()
+    await db.refresh(category)
     return category
 
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
     category_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("categories", "delete")),
 ):
-    category = db.query(Category).filter(Category.id == category_id).first()
+    result = await db.execute(select(Category).where(Category.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
     category_name = category.name
 
-    db.delete(category)
-    db.commit()
+    await db.delete(category)
+    await db.commit()
 
-    # Delete corresponding Discord forum tag
     delete_forum_tag(category_name)

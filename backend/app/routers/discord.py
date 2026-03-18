@@ -1,7 +1,9 @@
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Archive, Pack
 from app.schemas import DiscordPublishRequest, DiscordPublishPackRequest, DiscordPublishResponse
@@ -17,28 +19,26 @@ router = APIRouter(prefix="/api/discord", tags=["discord"])
 @router.post("/publish", response_model=DiscordPublishResponse)
 async def publish_to_discord(
     data: DiscordPublishRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("discord", "modify")),
 ):
     try:
-        archive = db.query(Archive).filter(Archive.id == data.archive_id).first()
+        result = await db.execute(
+            select(Archive)
+            .where(Archive.id == data.archive_id)
+            .options(selectinload(Archive.categories), selectinload(Archive.ages))
+        )
+        archive = result.scalar_one_or_none()
         if not archive:
-            return DiscordPublishResponse(
-                success=False,
-                message="Archive not found"
-            )
+            return DiscordPublishResponse(success=False, message="Archive not found")
 
         if archive.discord_post_id:
-            return DiscordPublishResponse(
-                success=False,
-                message="Archive already published to Discord"
-            )
+            return DiscordPublishResponse(success=False, message="Archive already published to Discord")
 
         cover_url = None
         if archive.cover_path:
             cover_url = f"{settings.base_url}/api/archives/cover/{archive.cover_path}"
 
-        # Parse chapters data
         chapters = None
         if archive.chapters_data:
             try:
@@ -46,7 +46,6 @@ async def publish_to_discord(
             except json.JSONDecodeError:
                 pass
 
-        # Get category and age names for Discord tags
         tag_names = []
         if archive.categories:
             tag_names.extend([cat.name for cat in archive.categories])
@@ -67,7 +66,7 @@ async def publish_to_discord(
         )
 
         archive.discord_post_id = post_id
-        db.commit()
+        await db.commit()
 
         return DiscordPublishResponse(
             success=True,
@@ -76,31 +75,27 @@ async def publish_to_discord(
         )
     except Exception as e:
         logger.error("Publish error: %s", e)
-        return DiscordPublishResponse(
-            success=False,
-            message=f"Failed to publish: {str(e)}"
-        )
+        return DiscordPublishResponse(success=False, message=f"Failed to publish: {str(e)}")
 
 
 @router.post("/publish-pack", response_model=DiscordPublishResponse)
 async def publish_pack_to_discord(
     data: DiscordPublishPackRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("discord", "modify")),
 ):
     try:
-        pack = db.query(Pack).filter(Pack.id == data.pack_id).first()
+        result = await db.execute(
+            select(Pack)
+            .where(Pack.id == data.pack_id)
+            .options(selectinload(Pack.archives))
+        )
+        pack = result.scalar_one_or_none()
         if not pack:
-            return DiscordPublishResponse(
-                success=False,
-                message="Pack not found"
-            )
+            return DiscordPublishResponse(success=False, message="Pack not found")
 
         if pack.discord_post_id:
-            return DiscordPublishResponse(
-                success=False,
-                message="Pack already published to Discord"
-            )
+            return DiscordPublishResponse(success=False, message="Pack already published to Discord")
 
         image_url = None
         if pack.image_path:
@@ -119,7 +114,7 @@ async def publish_pack_to_discord(
         )
 
         pack.discord_post_id = post_id
-        db.commit()
+        await db.commit()
 
         return DiscordPublishResponse(
             success=True,
@@ -128,7 +123,4 @@ async def publish_pack_to_discord(
         )
     except Exception as e:
         logger.error("Publish pack error: %s", e)
-        return DiscordPublishResponse(
-            success=False,
-            message=f"Failed to publish pack: {str(e)}"
-        )
+        return DiscordPublishResponse(success=False, message=f"Failed to publish pack: {str(e)}")
