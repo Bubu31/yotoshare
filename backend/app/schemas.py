@@ -305,6 +305,7 @@ class SubmissionResponse(BaseModel):
     rejection_reason: Optional[str] = None
     rework_comment: Optional[str] = None
     parent_submission_id: Optional[int] = None
+    has_extracted_data: bool = False
     created_at: datetime
 
     @field_validator("total_duration", mode="before")

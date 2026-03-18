@@ -20,6 +20,7 @@ const reworkComment = ref('')
 const playingKey = ref(null)
 const audioRef = ref(null)
 const audioUrl = ref(null)
+const extracting = ref(false)
 
 onMounted(async () => {
   await loadSubmission()
@@ -89,6 +90,19 @@ async function toggleAudio(key) {
   } catch (e) {
     showMessage('error', 'Impossible de charger l\'audio')
     playingKey.value = null
+  }
+}
+
+async function extractData() {
+  extracting.value = true
+  try {
+    await api.post(`/api/submissions/${route.params.id}/extract`)
+    showMessage('success', 'Extraction terminée')
+    await loadSubmission()
+  } catch (e) {
+    showMessage('error', e.response?.data?.detail || "Erreur lors de l'extraction")
+  } finally {
+    extracting.value = false
   }
 }
 
@@ -230,6 +244,30 @@ async function rework() {
 
         <!-- Right column: Chapters + Actions -->
         <div class="md:col-span-2 space-y-6">
+          <!-- Extraction banner -->
+          <div
+            v-if="submission && !submission.has_extracted_data"
+            class="card p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
+          >
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3 min-w-0">
+                <i class="fas fa-box-open text-amber-500 text-lg flex-shrink-0"></i>
+                <div>
+                  <p class="text-sm font-medium text-amber-800 dark:text-amber-300">Données non extraites</p>
+                  <p class="text-xs text-amber-600 dark:text-amber-400">La consultation sera lente car les fichiers sont lus depuis le ZIP. Extrayez les données pour une consultation rapide.</p>
+                </div>
+              </div>
+              <button
+                @click="extractData"
+                :disabled="extracting"
+                class="btn bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap flex-shrink-0"
+              >
+                <i :class="extracting ? 'fas fa-spinner fa-spin' : 'fas fa-archive'" class="mr-1.5"></i>
+                {{ extracting ? 'Extraction...' : 'Extraire' }}
+              </button>
+            </div>
+          </div>
+
           <!-- Chapters -->
           <div class="card p-4 md:p-6">
             <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">

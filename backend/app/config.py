@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     def pack_assets_path(self) -> str:
         return f"{self.nas_mount_path}/{self.packs_dir}/assets"
 
+    @property
+    def submissions_data_path(self) -> str:
+        return f"{self.nas_mount_path}/submissions-data"
+
     class Config:
         env_file = (".env", "../.env")
         extra = "ignore"

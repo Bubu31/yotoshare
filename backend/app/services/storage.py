@@ -169,6 +169,130 @@ def extract_archive_metadata(archive_path: str) -> dict:
     return metadata
 
 
+def extract_submission_data(archive_path: str, archive_filename: str) -> Optional[str]:
+    """Extract submission ZIP contents to a flat directory for fast access.
+
+    Creates: submissions-data/{uuid}/
+        card-data.json, cover.jpg/.png, icons/{key}.ext, audio/{key}.ext
+    Returns the extraction directory path, or None on failure.
+    """
+    stem = Path(archive_filename).stem
+    dest = os.path.join(settings.submissions_data_path, stem)
+    os.makedirs(dest, exist_ok=True)
+    icons_dir = os.path.join(dest, "icons")
+    audio_dir = os.path.join(dest, "audio")
+    os.makedirs(icons_dir, exist_ok=True)
+    os.makedirs(audio_dir, exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            namelist = zf.namelist()
+
+            # --- card-data.json ---
+            card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
+            card_data = None
+            if card_data_paths:
+                with zf.open(card_data_paths[0]) as f:
+                    card_data = json.load(f)
+                with open(os.path.join(dest, "card-data.json"), "w", encoding="utf-8") as out:
+                    json.dump(card_data, out, ensure_ascii=False)
+
+            # --- cover ---
+            cover_entries = [n for n in namelist if n.endswith("cover/cover.png") or n.endswith("cover/cover.jpg")]
+            if cover_entries:
+                ext = ".png" if cover_entries[0].lower().endswith(".png") else ".jpg"
+                with zf.open(cover_entries[0]) as src, open(os.path.join(dest, f"cover{ext}"), "wb") as out:
+                    out.write(src.read())
+
+            if not card_data:
+                return dest
+
+            chapters = card_data.get("content", {}).get("chapters", [])
+
+            # --- collect audio files from the archive ---
+            # Determine audio folder prefix
+            audio_prefix = None
+            for n in namelist:
+                lower = n.lower()
+                if "/audio/" in lower and any(lower.endswith(e) for e in ('.mp3', '.m4a', '.m4b', '.aac', '.wav', '.flac', '.ogg', '.opus')):
+                    audio_prefix = n[:n.lower().index("/audio/") + len("/audio/")]
+                    break
+            audio_entries = []
+            if audio_prefix:
+                audio_entries = sorted([n for n in namelist if n.startswith(audio_prefix) and not n.endswith("/")])
+
+            # --- collect icon files from the archive ---
+            icon_entries = sorted([n for n in namelist if ("icons/" in n) and n.lower().endswith((".png", ".jpg", ".jpeg"))])
+
+            # --- extract per chapter ---
+            for i, ch in enumerate(chapters):
+                key = ch.get("key", f"chapter_{i}")
+
+                # Audio: try card-data reference first, then index fallback
+                audio_file_in_zip = None
+                if ch.get("tracks") and len(ch["tracks"]) > 0:
+                    track = ch["tracks"][0]
+                    ref = track.get("file") or (track.get("trackUrl") if track.get("trackUrl") and not track["trackUrl"].startswith("yoto:") else None)
+                    if ref:
+                        for ae in audio_entries:
+                            if ae.endswith(f"/{ref}") or ae.endswith(f"\\{ref}"):
+                                audio_file_in_zip = ae
+                                break
+                if not audio_file_in_zip and i < len(audio_entries):
+                    audio_file_in_zip = audio_entries[i]
+
+                if audio_file_in_zip:
+                    ext = os.path.splitext(audio_file_in_zip)[1]
+                    with zf.open(audio_file_in_zip) as src, open(os.path.join(audio_dir, f"{key}{ext}"), "wb") as out:
+                        out.write(src.read())
+
+                # Icon: try card-data reference, then key prefix, then index fallback
+                icon_file_in_zip = None
+                icon_filename = ch.get("display", {}).get("icon16x16") if ch.get("display") else None
+                if icon_filename and not icon_filename.startswith("yoto:"):
+                    for ie in icon_entries:
+                        if ie.endswith(f"/{icon_filename}") or ie.endswith(f"\\{icon_filename}"):
+                            icon_file_in_zip = ie
+                            break
+                if not icon_file_in_zip:
+                    for ie in icon_entries:
+                        basename = ie.split("/")[-1]
+                        if basename.startswith(f"{key}-") or basename.startswith(f"{key} -"):
+                            icon_file_in_zip = ie
+                            break
+                if not icon_file_in_zip and i < len(icon_entries):
+                    icon_file_in_zip = icon_entries[i]
+
+                if icon_file_in_zip:
+                    ext = os.path.splitext(icon_file_in_zip)[1]
+                    with zf.open(icon_file_in_zip) as src, open(os.path.join(icons_dir, f"{key}{ext}"), "wb") as out:
+                        out.write(src.read())
+
+        return dest
+    except Exception:
+        logger.exception("Failed to extract submission data for %s", archive_filename)
+        return None
+
+
+def get_submission_data_dir(archive_filename: str) -> Optional[str]:
+    """Return the path to the extracted submission data directory, or None."""
+    stem = Path(archive_filename).stem
+    dirpath = os.path.join(settings.submissions_data_path, stem)
+    if os.path.isdir(dirpath):
+        return dirpath
+    return None
+
+
+def delete_submission_data(archive_filename: str) -> bool:
+    """Delete the extracted submission data directory."""
+    import shutil
+    dirpath = get_submission_data_dir(archive_filename)
+    if dirpath and os.path.isdir(dirpath):
+        shutil.rmtree(dirpath, ignore_errors=True)
+        return True
+    return False
+
+
 async def save_cover_from_bytes(image_data: bytes, max_size: tuple[int, int] = (400, 600)) -> Optional[str]:
     """Save cover image from raw bytes"""
     if not image_data:

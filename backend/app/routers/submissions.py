@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -94,6 +94,9 @@ async def create_submission(
     if metadata.get("cover_data"):
         cover_filename = await storage.save_cover_from_bytes(metadata["cover_data"])
 
+    # Extract ZIP contents to disk for fast access during review
+    await asyncio.to_thread(storage.extract_submission_data, archive_path, filename)
+
     submission = Submission(
         pseudonym=pseudonym.strip() if pseudonym else None,
         title=metadata.get("title"),
@@ -113,6 +116,13 @@ async def create_submission(
     return {"message": "Votre archive a été soumise et sera examinée par un modérateur. Merci !"}
 
 
+def _enrich_submission(sub: Submission) -> dict:
+    """Add has_extracted_data to a submission ORM object."""
+    data = {c.name: getattr(sub, c.name) for c in sub.__table__.columns}
+    data["has_extracted_data"] = storage.get_submission_data_dir(sub.archive_path) is not None
+    return data
+
+
 @router.get("", response_model=List[SubmissionResponse])
 async def list_submissions(
     status_filter: Optional[str] = None,
@@ -124,7 +134,7 @@ async def list_submissions(
         stmt = stmt.where(Submission.status == status_filter)
     stmt = stmt.order_by(Submission.created_at.desc())
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return [_enrich_submission(s) for s in result.scalars().all()]
 
 
 @router.get("/submissions-count")
@@ -191,7 +201,7 @@ async def get_submission(
     submission = result.scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
-    return submission
+    return _enrich_submission(submission)
 
 
 @router.get("/{submission_id}/cover")
@@ -224,8 +234,61 @@ async def get_submission_content(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
-    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
+    # Try extracted data first (fast path)
+    data_dir = storage.get_submission_data_dir(submission.archive_path)
+    if data_dir:
+        card_data_path = os.path.join(data_dir, "card-data.json")
+        if os.path.exists(card_data_path):
+            try:
+                with open(card_data_path, "r", encoding="utf-8") as f:
+                    card_data = json.load(f)
 
+                icons_dir = os.path.join(data_dir, "icons")
+                audio_dir = os.path.join(data_dir, "audio")
+                has_cover = any(
+                    os.path.exists(os.path.join(data_dir, f"cover{ext}"))
+                    for ext in (".jpg", ".png")
+                )
+
+                chapters = []
+                for i, ch in enumerate(card_data.get("content", {}).get("chapters", [])):
+                    key = ch.get("key") or f"chapter_{i}"
+                    icon_file = None
+                    for ext in (".png", ".jpg", ".jpeg"):
+                        if os.path.exists(os.path.join(icons_dir, f"{key}{ext}")):
+                            icon_file = f"{key}{ext}"
+                            break
+                    audio_file = None
+                    for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+                        if os.path.exists(os.path.join(audio_dir, f"{key}{ext}")):
+                            audio_file = f"{key}{ext}"
+                            break
+
+                    duration = ch.get("duration")
+                    if duration and duration < 100000:
+                        duration = duration * 1000
+
+                    chapters.append({
+                        "key": key,
+                        "title": ch.get("title"),
+                        "label": ch.get("overlayLabel"),
+                        "duration": duration,
+                        "audio_file": audio_file,
+                        "icon_file": icon_file,
+                        "order": i,
+                    })
+
+                return {
+                    "id": submission.id,
+                    "title": submission.title,
+                    "chapters": chapters,
+                    "has_cover": has_cover,
+                }
+            except Exception as e:
+                logger.warning("Error reading extracted data, falling back to ZIP: %s", e)
+
+    # Fallback: read from ZIP (for old submissions without extracted data)
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
     if archive_path:
         try:
             content = await asyncio.to_thread(archive_editor.get_archive_content, archive_path)
@@ -291,6 +354,21 @@ async def get_submission_audio(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
+    # Try extracted data first (fast path)
+    data_dir = storage.get_submission_data_dir(submission.archive_path)
+    if data_dir:
+        audio_dir = os.path.join(data_dir, "audio")
+        for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+            audio_path = os.path.join(audio_dir, f"{chapter_key}{ext}")
+            if os.path.exists(audio_path):
+                content_types = {
+                    ".m4a": "audio/mp4", ".m4b": "audio/mp4", ".aac": "audio/mp4",
+                    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+                    ".wav": "audio/wav", ".flac": "audio/flac",
+                }
+                return FileResponse(audio_path, media_type=content_types.get(ext, "audio/mpeg"))
+
+    # Fallback: extract from ZIP
     archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
@@ -337,6 +415,17 @@ async def get_submission_icon(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
+    # Try extracted data first (fast path)
+    data_dir = storage.get_submission_data_dir(submission.archive_path)
+    if data_dir:
+        icons_dir = os.path.join(data_dir, "icons")
+        for ext in (".png", ".jpg", ".jpeg"):
+            icon_path = os.path.join(icons_dir, f"{chapter_key}{ext}")
+            if os.path.exists(icon_path):
+                media_type = "image/png" if ext == ".png" else "image/jpeg"
+                return FileResponse(icon_path, media_type=media_type)
+
+    # Fallback: read from ZIP
     archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
@@ -407,6 +496,32 @@ async def get_submission_icon(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.post("/{submission_id}/extract")
+async def extract_submission(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("submissions", "access")),
+):
+    """Extract submission ZIP to disk for fast consultation."""
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
+
+    if storage.get_submission_data_dir(submission.archive_path):
+        return {"message": "Données déjà extraites."}
+
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
+    if not archive_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
+
+    dest = await asyncio.to_thread(storage.extract_submission_data, archive_path, submission.archive_path)
+    if not dest:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erreur lors de l'extraction")
+
+    return {"message": "Extraction terminée."}
+
+
 @router.post("/{submission_id}/review")
 async def review_submission(
     submission_id: int,
@@ -466,9 +581,13 @@ async def review_submission(
             parent = parent_result.scalar_one_or_none()
             if parent and parent.status == "rework":
                 storage.delete_archive(parent.archive_path)
+                storage.delete_submission_data(parent.archive_path)
                 if parent.cover_path:
                     storage.delete_cover(parent.cover_path)
                 parent.status = "rework_resolved"
+
+        # Clean up extracted submission data (archive is now in the library)
+        storage.delete_submission_data(submission.archive_path)
 
         await db.commit()
         await db.refresh(archive)
@@ -486,6 +605,7 @@ async def review_submission(
 
     else:  # reject
         storage.delete_archive(submission.archive_path)
+        storage.delete_submission_data(submission.archive_path)
         if submission.cover_path:
             storage.delete_cover(submission.cover_path)
 
@@ -511,6 +631,7 @@ async def delete_submission(
 
     if submission.status != "approved":
         storage.delete_archive(submission.archive_path)
+        storage.delete_submission_data(submission.archive_path)
         if submission.cover_path:
             storage.delete_cover(submission.cover_path)
 
