@@ -125,17 +125,10 @@ function reset() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
-    <div class="w-full max-w-lg">
-      <!-- Branding -->
+  <div class="w-full max-w-lg mx-auto">
+      <!-- Header -->
       <div class="text-center mb-8">
-        <div class="inline-flex items-center space-x-2.5 mb-2">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30" style="background: linear-gradient(135deg, #6366f1, #38bdf8);">
-            <i class="fas fa-share-nodes text-white"></i>
-          </div>
-          <span class="text-2xl font-extrabold bg-gradient-to-r from-indigo-500 to-cyan-500 bg-clip-text text-transparent">YotoShare</span>
-        </div>
-        <h1 class="text-xl font-bold text-gray-800 dark:text-white mt-2">Soumettre une archive</h1>
+        <h1 class="text-xl font-bold text-gray-800 dark:text-white">Soumettre une archive</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Partagez votre archive MYO avec la communauté</p>
       </div>
 
@@ -257,5 +250,4 @@ function reset() {
         </button>
       </div>
     </div>
-  </div>
 </template>

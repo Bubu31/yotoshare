@@ -47,17 +47,10 @@ function downloadUrl(id) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
-    <div class="max-w-4xl mx-auto">
+  <div class="max-w-4xl mx-auto">
       <!-- Header -->
       <div class="text-center mb-8">
-        <div class="inline-flex items-center space-x-2.5 mb-2">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30" style="background: linear-gradient(135deg, #6366f1, #38bdf8);">
-            <i class="fas fa-share-nodes text-white"></i>
-          </div>
-          <span class="text-2xl font-extrabold bg-gradient-to-r from-indigo-500 to-cyan-500 bg-clip-text text-transparent">YotoShare</span>
-        </div>
-        <h1 class="text-xl font-bold text-gray-800 dark:text-white mt-2">
+        <h1 class="text-xl font-bold text-gray-800 dark:text-white">
           <i class="fas fa-wrench text-orange-500 mr-2"></i>
           Archives à retravailler
         </h1>
@@ -152,5 +145,4 @@ function downloadUrl(id) {
         </div>
       </div>
     </div>
-  </div>
 </template>
