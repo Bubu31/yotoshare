@@ -130,7 +130,11 @@ def extract_archive_metadata(archive_path: str) -> dict:
                         if "metadata" in card_data and "media" in card_data["metadata"]:
                             media = card_data["metadata"]["media"]
                             duration = media.get("duration")
-                            metadata["total_duration"] = int(duration) if duration is not None else None
+                            if duration is not None:
+                                duration = int(duration)
+                                if duration < 100000:  # Likely seconds, not ms
+                                    duration *= 1000
+                            metadata["total_duration"] = duration
 
                         # Extract chapters
                         if "content" in card_data and "chapters" in card_data["content"]:

@@ -5,6 +5,9 @@
 Application full-stack de gestion et partage d'archives audio MYO Studio avec intégration Discord.
 Permet l'upload, l'édition (chapitres, audio, covers, NFO) et la publication d'archives sur un forum Discord.
 
+**Domaine production** : `yotoshare.com` (ancien : `lib.yoto.webuso.fr`, redirect 301 en place)
+**Repo** : `github.com/bubu31/yotoshare` — branche principale : `main`, ancienne branche : `legacy`
+
 ## Stack technique
 
 | Couche | Technologies |
@@ -13,14 +16,15 @@ Permet l'upload, l'édition (chapitres, audio, covers, NFO) et la publication d'
 | Frontend | Vue 3.4, Pinia 2.1, Vue Router 4.2, Tailwind CSS 3.4, Vite 5 |
 | Audio | FFmpeg (waveform, split, trim, merge via subprocess) |
 | Discord | py-cord 2.4 (bot dans un thread background) |
-| Infra | Docker Compose, Nginx (reverse proxy, rate limiting) |
+| Infra | Docker Compose, Traefik (reverse proxy, TLS), Komodo (orchestration) |
+| CI/CD | GitHub Actions → GHCR (`ghcr.io/bubu31/yotoshare-backend/frontend/nginx`) |
 
 ## Structure du projet
 
 ```
 backend/app/
 ├── main.py              # App FastAPI, enregistrement des routers, startup
-├── config.py            # Settings Pydantic (lit .env)
+├── config.py            # Settings Pydantic (lit .env) — BASE_URL centralisé ici
 ├── database.py          # SQLAlchemy engine, sessions, migrations manuelles
 ├── models.py            # Modèles ORM (Archive, Category, Age, User, Role, DownloadToken, Pack, PackAsset)
 ├── schemas.py           # Schémas Pydantic request/response
@@ -49,12 +53,20 @@ frontend/src/
 ├── main.js              # Point d'entrée Vue
 ├── router/index.js      # Routes
 ├── services/api.js      # Instance Axios, intercepteur 401
+├── composables/         # useMessage.js
 ├── stores/              # Pinia: auth.js, archives.js, packs.js, theme.js
 ├── views/               # ArchivesView, UploadView, EditView, PacksView, etc.
 └── components/
     ├── Navbar.vue, ArchiveCard.vue, ArchiveForm.vue, TagInput.vue
     ├── BulkUploadModal.vue, PublishModal.vue, CreatePackModal.vue
     └── archive-editor/  # ChapterList, ChapterEditor, AudioWaveform, CoverCropper, NfoEditor
+
+nginx/
+├── nginx.conf           # Reverse proxy config (rate limiting, gzip, timeouts)
+└── Dockerfile           # Build nginx image avec config embarquée
+
+.github/workflows/
+└── ci.yml               # Test + build/push 3 images Docker sur GHCR (main → :latest, staging → :staging)
 ```
 
 ## Conventions et patterns
@@ -69,15 +81,17 @@ frontend/src/
 - **Fichiers** : archives = `{NAS_MOUNT_PATH}/archives/{uuid}.zip`, covers = `{NAS_MOUNT_PATH}/covers/{uuid}.jpg`
 - **Format ZIP** : dossier racine optionnel, contient `data/card-data.json` avec metadata/chapitres
 - **Tokens download** : `{random_hex}{hmac_signature}`, usage unique, expiration configurable
+- **URLs dynamiques** : toutes les URLs (share, download, Discord embeds) utilisent `settings.base_url`
 
 ### Frontend
 
 - **State** : Pinia stores (auth persiste token/role dans localStorage, theme persiste dark mode)
-- **API** : Axios avec intercepteur 401 → redirect `/login`
+- **API** : Axios avec intercepteur 401 → redirect `/login`. URLs toutes relatives (pas de domaine hardcodé)
 - **Icônes UI** : Font Awesome 6.5.1 via CDN
 - **Style** : Tailwind CSS avec dark mode par classe, palette primary sky blue
 - **Couleurs dynamiques Tailwind** : utiliser des objets de mapping statiques — jamais de template literals pour les classes Tailwind
 - **Éditeur** : wavesurfer.js (audio), vue-advanced-cropper (cover), vuedraggable (chapitres)
+- **Composables** : `useMessage()` pour les notifications (utilisé dans toutes les views)
 
 ## Routes API
 
@@ -125,15 +139,40 @@ docker compose up --build -d
 | `DISCORD_BOT_TOKEN` | Token du bot Discord |
 | `DISCORD_GUILD_ID` | ID du serveur Discord |
 | `DISCORD_FORUM_CHANNEL_ID` | ID du canal forum Discord |
-| `BASE_URL` | URL publique de l'application |
+| `BASE_URL` | URL publique de l'application (prod: `https://yotoshare.com`) |
 | `DOWNLOAD_LINK_EXPIRY` | Durée de validité des liens (secondes, défaut: 7200) |
 | `CORS_ORIGINS` | Origines CORS autorisées |
-| `SERVICE_API_KEY` | Clé API inter-service |
+| `SERVICE_API_KEY` | Clé API inter-service (ex: yotoprint) |
+| `YOTO_CLIENT_ID` | Client ID Yoto OAuth |
+| `YOTO_REDIRECT_URI` | URI de callback OAuth |
+| `AI_API_URL` | URL de l'API IA externe |
+| `AI_API_KEY` | Clé API IA |
 
-## Infra Docker
+## Infra & Déploiement
 
-- **backend** : FastAPI + Uvicorn (4 workers), healthcheck sur `/api/health`
-- **frontend** : Build Vite → Nginx statique
-- **nginx** : Reverse proxy, rate limiting (10 req/s API, 2 req/s downloads), gzip, timeouts
-- **autoheal** : Redémarre les containers unhealthy
-- **Volumes** : `./data/yotoshare.db` (SQLite), `${NAS_MOUNT_PATH}` (fichiers)
+### Docker local (docker-compose.yml)
+- **backend** : build local, healthcheck `/api/health`
+- **frontend** : build Vite → Nginx statique, healthcheck
+- **nginx** : `nginx:alpine` avec config montée en volume
+- **autoheal** : redémarre les containers unhealthy
+
+### Production (Komodo sur komodo.busolin.fr)
+
+3 stacks configurées :
+
+| Stack | Domaine | Images | État |
+|-------|---------|--------|------|
+| `yotoshare` | `yotoshare.com` | `ghcr.io/bubu31/yotoshare-*:latest` | Config prête, non déployée |
+| `yoto-library` | `lib.yoto.webuso.fr` | `ghcr.io/bubu31/yoto-library-*:latest` | Prod actuelle |
+| `yoto-library-staging` | `staging.yotoshare.com` | `ghcr.io/bubu31/yotoshare-*:staging` | Config prête, non déployée |
+
+- **Traefik** : gère TLS (Let's Encrypt) et routage. Redirect 301 `lib.yoto.webuso.fr` → `yotoshare.com` configurée via labels sur le stack `yotoshare`
+- **NFS** : volume NFS vers Synology NAS (`192.168.1.120:/volume10/yoto`)
+- **CI/CD** : push sur `main` → build + push `:latest` sur GHCR. Push sur `staging` → `:staging`
+- **Variable GitHub Actions requise** : `VITE_YOTO_CLIENT_ID` (Settings > Variables > Actions)
+
+### Migration en cours (voir todo.md)
+- La prod actuelle tourne sur `lib.yoto.webuso.fr` (stack `yoto-library`)
+- Le stack `yotoshare` est prêt à remplacer sur `yotoshare.com`
+- Le DNS de `lib.yoto.webuso.fr` doit pointer vers le même serveur pour que la redirect fonctionne
+- Le même `SECRET_KEY` doit être conservé pour la validité des tokens existants
