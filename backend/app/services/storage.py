@@ -210,16 +210,11 @@ def extract_submission_data(archive_path: str, archive_filename: str) -> Optiona
             chapters = card_data.get("content", {}).get("chapters", [])
 
             # --- collect audio files from the archive ---
-            # Determine audio folder prefix
-            audio_prefix = None
-            for n in namelist:
-                lower = n.lower()
-                if "/audio/" in lower and any(lower.endswith(e) for e in ('.mp3', '.m4a', '.m4b', '.aac', '.wav', '.flac', '.ogg', '.opus')):
-                    audio_prefix = n[:n.lower().index("/audio/") + len("/audio/")]
-                    break
-            audio_entries = []
-            if audio_prefix:
-                audio_entries = sorted([n for n in namelist if n.startswith(audio_prefix) and not n.endswith("/")])
+            audio_extensions = ('.mp3', '.m4a', '.m4b', '.aac', '.wav', '.flac', '.ogg', '.opus')
+            audio_entries = sorted([
+                n for n in namelist
+                if "audio/" in n and not n.endswith("/") and n.lower().endswith(audio_extensions)
+            ])
 
             # --- collect icon files from the archive ---
             icon_entries = sorted([n for n in namelist if ("icons/" in n) and n.lower().endswith((".png", ".jpg", ".jpeg"))])
