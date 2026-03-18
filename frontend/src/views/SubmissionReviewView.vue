@@ -16,6 +16,7 @@ const showRejectModal = ref(false)
 const rejectionReason = ref('')
 const playingKey = ref(null)
 const audioRef = ref(null)
+const audioUrl = ref(null)
 
 onMounted(async () => {
   await loadSubmission()
@@ -65,12 +66,23 @@ function formatDate(dateStr) {
   })
 }
 
-function toggleAudio(key) {
+async function toggleAudio(key) {
   if (playingKey.value === key) {
     audioRef.value?.pause()
     playingKey.value = null
-  } else {
-    playingKey.value = key
+    return
+  }
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+    audioUrl.value = null
+  }
+  playingKey.value = key
+  try {
+    const { data } = await api.get(`/api/submissions/${submission.value.id}/audio/${key}`, { responseType: 'blob' })
+    audioUrl.value = URL.createObjectURL(data)
+  } catch (e) {
+    showMessage('error', 'Impossible de charger l\'audio')
+    playingKey.value = null
   }
 }
 
@@ -227,9 +239,9 @@ async function reject() {
 
           <!-- Audio player (hidden) -->
           <audio
-            v-if="playingKey"
+            v-if="audioUrl"
             ref="audioRef"
-            :src="`/api/submissions/${submission.id}/audio/${playingKey}`"
+            :src="audioUrl"
             autoplay
             @ended="playingKey = null"
             class="hidden"
