@@ -170,11 +170,11 @@ async def get_submission_content(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
-    archive_path = storage.get_archive_path(submission.archive_path)
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
 
     if archive_path:
         try:
-            content = archive_editor.get_archive_content(archive_path)
+            content = await asyncio.to_thread(archive_editor.get_archive_content, archive_path)
             chapters = [
                 {
                     "key": ch.get("key") or f"chapter_{i}",
@@ -237,12 +237,12 @@ async def get_submission_audio(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
-    archive_path = storage.get_archive_path(submission.archive_path)
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 
     try:
-        result = archive_editor.get_chapter_audio_path_from_archive(archive_path, chapter_key)
+        result = await asyncio.to_thread(archive_editor.get_chapter_audio_path_from_archive, archive_path, chapter_key)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio introuvable")
 
@@ -283,7 +283,7 @@ async def get_submission_icon(
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
 
-    archive_path = storage.get_archive_path(submission.archive_path)
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 

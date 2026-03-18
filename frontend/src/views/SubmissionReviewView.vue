@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from '../composables/useMessage'
 import api from '../services/api'
@@ -13,6 +13,7 @@ const content = ref(null)
 const loading = ref(true)
 const processing = ref(false)
 const showRejectModal = ref(false)
+const showCoverModal = ref(false)
 const rejectionReason = ref('')
 const playingKey = ref(null)
 const audioRef = ref(null)
@@ -36,7 +37,8 @@ async function loadSubmission() {
     const { data } = await api.get(`/api/submissions/${route.params.id}/content`)
     content.value = data
   } catch (e) {
-    // Content may fail but submission info still shows
+    console.error('Failed to load submission content:', e)
+    showMessage('error', e.response?.data?.detail || 'Impossible de charger le contenu de l\'archive')
   }
   loading.value = false
 }
@@ -80,6 +82,7 @@ async function toggleAudio(key) {
   try {
     const { data } = await api.get(`/api/submissions/${submission.value.id}/audio/${key}`, { responseType: 'blob' })
     audioUrl.value = URL.createObjectURL(data)
+    await nextTick()
     await audioRef.value?.play()
   } catch (e) {
     showMessage('error', 'Impossible de charger l\'audio')
@@ -140,16 +143,24 @@ async function reject() {
         <div class="md:col-span-1">
           <div class="card overflow-hidden">
             <!-- Cover -->
-            <div class="aspect-[3/4] bg-gray-100 dark:bg-gray-800">
+            <div class="aspect-square bg-gray-100 dark:bg-gray-800 relative group">
               <img
                 v-if="submission.cover_path"
                 :src="`/api/archives/cover/${submission.cover_path}`"
                 :alt="submission.title"
-                class="w-full h-full object-cover"
+                class="w-full h-full object-contain cursor-pointer"
+                @click="showCoverModal = true"
               >
               <div v-else class="w-full h-full flex items-center justify-center">
                 <i class="fas fa-file-archive text-5xl text-gray-300 dark:text-gray-600"></i>
               </div>
+              <button
+                v-if="submission.cover_path"
+                @click="showCoverModal = true"
+                class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <i class="fas fa-expand text-xs"></i>
+              </button>
             </div>
 
             <div class="p-4 space-y-3">
@@ -308,5 +319,18 @@ async function reject() {
         </div>
       </div>
     </Teleport>
+
+  <!-- Cover modal -->
+  <Teleport to="body">
+    <div v-if="showCoverModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click="showCoverModal = false">
+      <div class="fixed inset-0 bg-black/80"></div>
+      <img
+        :src="`/api/archives/cover/${submission.cover_path}`"
+        :alt="submission.title"
+        class="relative max-w-full max-h-full rounded-xl shadow-2xl"
+        @click.stop
+      >
+    </div>
+  </Teleport>
   </div>
 </template>
