@@ -452,7 +452,7 @@ async def delete_pack(
 
     if pack.discord_post_id:
         try:
-            from app.services.discord_bot import delete_discord_thread
+            from app.services.discord_client import delete_discord_thread
             delete_discord_thread(pack.discord_post_id)
         except Exception as e:
             logger.warning("Failed to delete Discord thread for pack %s: %s", pack.id, e)

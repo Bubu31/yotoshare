@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models import Category
 from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse
 from app.auth import require_permission
-from app.services.discord_bot import create_forum_tag, delete_forum_tag
+from app.services.discord_client import create_forum_tag, delete_forum_tag
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
