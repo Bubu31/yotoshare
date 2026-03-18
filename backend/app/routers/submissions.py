@@ -191,6 +191,63 @@ async def download_rework_submission(
     )
 
 
+@router.get("/rework/{submission_id}/audio/{chapter_key}")
+async def get_rework_audio(
+    submission_id: int,
+    chapter_key: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint: stream audio for a rework submission chapter."""
+    result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = result.scalar_one_or_none()
+    if not submission or submission.status != "rework":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Soumission introuvable")
+
+    # Try extracted data first (fast path)
+    data_dir = storage.get_submission_data_dir(submission.archive_path)
+    if data_dir:
+        audio_dir = os.path.join(data_dir, "audio")
+        for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+            audio_path = os.path.join(audio_dir, f"{chapter_key}{ext}")
+            if os.path.exists(audio_path):
+                content_types = {
+                    ".m4a": "audio/mp4", ".m4b": "audio/mp4", ".aac": "audio/mp4",
+                    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+                    ".wav": "audio/wav", ".flac": "audio/flac",
+                }
+                return FileResponse(audio_path, media_type=content_types.get(ext, "audio/mpeg"))
+
+    # Fallback: extract from ZIP
+    archive_path = await asyncio.to_thread(storage.get_archive_path, submission.archive_path)
+    if not archive_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
+
+    try:
+        result = await asyncio.to_thread(archive_editor.get_chapter_audio_path_from_archive, archive_path, chapter_key)
+        if not result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio introuvable")
+
+        temp_dir, audio_path, editor = result
+        ext = os.path.splitext(audio_path)[1].lower()
+        content_type_map = {".m4a": "audio/mp4", ".m4b": "audio/mp4", ".aac": "audio/mp4",
+                            ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav"}
+        content_type = content_type_map.get(ext, "audio/mpeg")
+
+        async def audio_iterator():
+            try:
+                async with aiofiles.open(audio_path, "rb") as f:
+                    while chunk := await f.read(64 * 1024):
+                        yield chunk
+            finally:
+                editor.cleanup()
+
+        return StreamingResponse(audio_iterator(), media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.get("/{submission_id}", response_model=SubmissionResponse)
 async def get_submission(
     submission_id: int,

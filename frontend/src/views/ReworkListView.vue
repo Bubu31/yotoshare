@@ -1,11 +1,22 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 
 const submissions = ref([])
 const loading = ref(true)
 const error = ref('')
+
+// Modal
 const selectedSub = ref(null)
+const coverZoomed = ref(false)
+const iconErrors = ref({}) // key: `${subId}-${chKey}` → true if failed
+
+// Audio player
+const playingKey = ref(null)
+const isPaused = ref(false)
+const audioProgress = ref(0)
+const audioDuration = ref(0)
+let audioEl = null
 
 onMounted(async () => {
   try {
@@ -17,6 +28,8 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+onUnmounted(() => stopAudio())
 
 function formatSize(bytes) {
   if (!bytes) return '—'
@@ -32,25 +45,36 @@ function formatDuration(ms) {
   return `${min}:${sec.toString().padStart(2, '0')}`
 }
 
+function formatTime(sec) {
+  if (!sec || isNaN(sec)) return '0:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 function chaptersCount(sub) {
   if (sub.chapters_count) return sub.chapters_count
   if (sub.chapters_data) {
-    try {
-      return JSON.parse(sub.chapters_data).length
-    } catch { return null }
+    try { return JSON.parse(sub.chapters_data).length } catch { return null }
   }
   return null
 }
 
 function parsedChapters(sub) {
   if (!sub.chapters_data) return []
-  try {
-    return JSON.parse(sub.chapters_data)
-  } catch { return [] }
+  try { return JSON.parse(sub.chapters_data) } catch { return [] }
 }
 
 function iconUrl(subId, key) {
   return `/api/submissions/${subId}/icon/${key}`
+}
+
+function onIconError(subId, key) {
+  iconErrors.value[`${subId}-${key}`] = true
+}
+
+function iconFailed(subId, key) {
+  return !!iconErrors.value[`${subId}-${key}`]
 }
 
 function isYotoIcon(icon) {
@@ -62,11 +86,63 @@ function downloadUrl(id) {
 }
 
 function openDetail(sub) {
+  stopAudio()
+  iconErrors.value = {}
   selectedSub.value = sub
+  coverZoomed.value = false
 }
 
 function closeDetail() {
+  stopAudio()
   selectedSub.value = null
+  coverZoomed.value = false
+}
+
+// Audio
+function toggleChapter(subId, key) {
+  if (playingKey.value === key) {
+    if (audioEl) {
+      if (isPaused.value) { audioEl.play(); isPaused.value = false }
+      else { audioEl.pause(); isPaused.value = true }
+    }
+    return
+  }
+  stopAudio()
+  playingKey.value = key
+  isPaused.value = false
+  audioProgress.value = 0
+  audioDuration.value = 0
+
+  const audio = new Audio(`/api/submissions/rework/${subId}/audio/${key}`)
+  audio.ontimeupdate = () => {
+    audioProgress.value = audio.currentTime
+    audioDuration.value = audio.duration || 0
+  }
+  audio.onended = () => {
+    playingKey.value = null
+    isPaused.value = false
+    audioProgress.value = 0
+  }
+  audio.onerror = () => {
+    playingKey.value = null
+  }
+  audio.play()
+  audioEl = audio
+}
+
+function seekAudio(e) {
+  if (!audioEl || !audioDuration.value) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  const ratio = (e.clientX - rect.left) / rect.width
+  audioEl.currentTime = ratio * audioDuration.value
+}
+
+function stopAudio() {
+  if (audioEl) { audioEl.pause(); audioEl = null }
+  playingKey.value = null
+  isPaused.value = false
+  audioProgress.value = 0
+  audioDuration.value = 0
 }
 </script>
 
@@ -109,8 +185,8 @@ function closeDetail() {
         class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden"
       >
         <div class="flex flex-col sm:flex-row">
-          <!-- Cover -->
-          <div class="sm:w-40 sm:h-40 h-48 bg-gray-100 dark:bg-gray-800 flex-shrink-0">
+          <!-- Cover — no fixed height on sm so it stretches with card -->
+          <div class="sm:w-40 h-48 sm:h-auto bg-gray-100 dark:bg-gray-800 flex-shrink-0">
             <img
               v-if="sub.cover_path"
               :src="`/api/submissions/${sub.id}/cover`"
@@ -124,16 +200,12 @@ function closeDetail() {
 
           <!-- Content -->
           <div class="flex-1 p-4 sm:p-5">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h3 class="font-semibold text-gray-800 dark:text-white text-lg">
-                  {{ sub.title || 'Sans titre' }}
-                </h3>
-                <p v-if="sub.pseudonym" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  <i class="fas fa-user mr-1"></i>{{ sub.pseudonym }}
-                </p>
-              </div>
-            </div>
+            <h3 class="font-semibold text-gray-800 dark:text-white text-lg">
+              {{ sub.title || 'Sans titre' }}
+            </h3>
+            <p v-if="sub.pseudonym" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              <i class="fas fa-user mr-1"></i>{{ sub.pseudonym }}
+            </p>
 
             <!-- Meta -->
             <div class="flex items-center gap-3 mt-2 text-xs text-gray-400 dark:text-gray-500">
@@ -184,22 +256,29 @@ function closeDetail() {
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
       @click.self="closeDetail"
     >
-      <!-- Backdrop -->
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeDetail"></div>
 
-      <!-- Panel -->
       <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-2xl max-h-[85vh] flex flex-col">
+
         <!-- Header -->
         <div class="flex items-start gap-4 p-5 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
-          <img
+          <!-- Cover (cliquable pour agrandir) -->
+          <button
             v-if="selectedSub.cover_path"
-            :src="`/api/submissions/${selectedSub.id}/cover`"
-            :alt="selectedSub.title"
-            class="w-16 h-16 rounded-xl object-cover flex-shrink-0"
+            @click="coverZoomed = true"
+            class="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-transparent hover:ring-primary-500 transition-all"
+            title="Agrandir la cover"
           >
+            <img
+              :src="`/api/submissions/${selectedSub.id}/cover`"
+              :alt="selectedSub.title"
+              class="w-full h-full object-cover"
+            >
+          </button>
           <div v-else class="w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
             <i class="fas fa-file-archive text-2xl text-gray-400"></i>
           </div>
+
           <div class="flex-1 min-w-0">
             <h2 class="font-bold text-gray-900 dark:text-white text-lg truncate">{{ selectedSub.title || 'Sans titre' }}</h2>
             <p v-if="selectedSub.pseudonym" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
@@ -211,6 +290,7 @@ function closeDetail() {
               <span v-if="chaptersCount(selectedSub)"><i class="fas fa-list mr-1"></i>{{ chaptersCount(selectedSub) }} chapitres</span>
             </div>
           </div>
+
           <button @click="closeDetail" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0 transition-colors">
             <i class="fas fa-times text-lg"></i>
           </button>
@@ -232,33 +312,73 @@ function closeDetail() {
             <i class="fas fa-info-circle mr-1"></i>Aucune information sur les chapitres.
           </div>
 
-          <div v-else class="space-y-1.5">
+          <div v-else class="space-y-2">
             <div
               v-for="(ch, i) in parsedChapters(selectedSub)"
               :key="ch.key || i"
-              class="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50"
+              class="rounded-xl bg-gray-50 dark:bg-gray-800/50 overflow-hidden"
             >
-              <!-- Icon -->
-              <div class="w-8 h-8 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center">
-                <img
-                  v-if="ch.key && !isYotoIcon(ch.icon)"
-                  :src="iconUrl(selectedSub.id, ch.key)"
-                  class="w-full h-full object-cover"
-                  @error="$event.target.style.display='none'; $event.target.nextSibling.style.display='flex'"
+              <!-- Chapter row -->
+              <div class="flex items-center gap-3 px-3 py-2.5">
+                <!-- Icon -->
+                <div class="w-9 h-9 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-xs text-gray-400 dark:text-gray-500 font-medium">
+                  <img
+                    v-if="ch.key && !isYotoIcon(ch.icon) && !iconFailed(selectedSub.id, ch.key)"
+                    :src="iconUrl(selectedSub.id, ch.key)"
+                    class="w-full h-full object-cover"
+                    @error="onIconError(selectedSub.id, ch.key)"
+                  >
+                  <span v-else>{{ i + 1 }}</span>
+                </div>
+
+                <!-- Title + label -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-gray-800 dark:text-white truncate">
+                    {{ ch.title || `Chapitre ${i + 1}` }}
+                  </p>
+                  <p v-if="ch.label" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ ch.label }}</p>
+                </div>
+
+                <!-- Duration -->
+                <span v-if="ch.duration" class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 font-mono">
+                  {{ formatDuration(ch.duration < 100000 ? ch.duration * 1000 : ch.duration) }}
+                </span>
+
+                <!-- Play button -->
+                <button
+                  v-if="ch.key"
+                  @click="toggleChapter(selectedSub.id, ch.key)"
+                  class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+                  :class="playingKey === ch.key
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-primary-100 dark:hover:bg-primary-900/30'"
                 >
-                <span class="text-xs text-gray-400 dark:text-gray-500 hidden items-center justify-center w-full h-full">{{ i + 1 }}</span>
+                  <i
+                    class="fas text-xs"
+                    :class="playingKey === ch.key && !isPaused ? 'fa-pause' : 'fa-play'"
+                  ></i>
+                </button>
               </div>
-              <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-800 dark:text-white truncate">
-                  {{ ch.title || `Chapitre ${i + 1}` }}
-                </p>
-                <p v-if="ch.label" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ ch.label }}</p>
+
+              <!-- Progress bar (only when this chapter is playing) -->
+              <div
+                v-if="playingKey === ch.key"
+                class="px-3 pb-2.5"
+              >
+                <div
+                  class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full cursor-pointer relative"
+                  @click="seekAudio"
+                >
+                  <div
+                    class="h-full bg-primary-500 rounded-full transition-none"
+                    :style="{ width: audioDuration ? (audioProgress / audioDuration * 100) + '%' : '0%' }"
+                  ></div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-400 dark:text-gray-500 font-mono">
+                  <span>{{ formatTime(audioProgress) }}</span>
+                  <span>{{ formatTime(audioDuration) }}</span>
+                </div>
               </div>
-              <!-- Duration -->
-              <span v-if="ch.duration" class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 font-mono">
-                {{ formatDuration(ch.duration < 100000 ? ch.duration * 1000 : ch.duration) }}
-              </span>
             </div>
           </div>
         </div>
@@ -281,6 +401,27 @@ function closeDetail() {
           </router-link>
         </div>
       </div>
+    </div>
+  </Teleport>
+
+  <!-- Cover lightbox -->
+  <Teleport to="body">
+    <div
+      v-if="coverZoomed && selectedSub?.cover_path"
+      class="fixed inset-0 z-[60] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm"
+      @click="coverZoomed = false"
+    >
+      <img
+        :src="`/api/submissions/${selectedSub.id}/cover`"
+        :alt="selectedSub.title"
+        class="max-w-full max-h-full rounded-2xl shadow-2xl object-contain"
+      >
+      <button
+        @click="coverZoomed = false"
+        class="absolute top-4 right-4 w-10 h-10 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+      >
+        <i class="fas fa-times"></i>
+      </button>
     </div>
   </Teleport>
 </template>
