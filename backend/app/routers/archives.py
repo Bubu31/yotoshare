@@ -123,24 +123,24 @@ async def list_archives(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
-    base_stmt = select(Archive)
+    filters = []
     if category_id:
-        base_stmt = base_stmt.where(Archive.categories.any(Category.id == category_id))
+        filters.append(Archive.categories.any(Category.id == category_id))
     if age_id:
-        base_stmt = base_stmt.where(Archive.ages.any(Age.id == age_id))
+        filters.append(Archive.ages.any(Age.id == age_id))
     if search:
         search_term = f"%{search}%"
-        base_stmt = base_stmt.where(
-            (Archive.title.ilike(search_term)) | (Archive.author.ilike(search_term))
-        )
+        filters.append((Archive.title.ilike(search_term)) | (Archive.author.ilike(search_term)))
     if hide_published:
-        base_stmt = base_stmt.where(Archive.discord_post_id.is_(None))
+        filters.append(Archive.discord_post_id.is_(None))
 
-    total_result = await db.execute(
-        select(func.count(Archive.id)).where(*base_stmt.whereclause.clauses)
-        if base_stmt.whereclause is not None
-        else select(func.count(Archive.id))
-    )
+    base_stmt = select(Archive)
+    count_stmt = select(func.count(Archive.id))
+    for f in filters:
+        base_stmt = base_stmt.where(f)
+        count_stmt = count_stmt.where(f)
+
+    total_result = await db.execute(count_stmt)
     total = total_result.scalar()
 
     sort_map = {
