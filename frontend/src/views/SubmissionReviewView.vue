@@ -21,6 +21,31 @@ const playingKey = ref(null)
 const audioRef = ref(null)
 const audioUrl = ref(null)
 const extracting = ref(false)
+const audioCurrentTime = ref(0)
+const audioDuration = ref(0)
+
+function onTimeUpdate() {
+  if (audioRef.value) {
+    audioCurrentTime.value = audioRef.value.currentTime
+    audioDuration.value = audioRef.value.duration || 0
+  }
+}
+
+function seekAudio(event) {
+  const bar = event.currentTarget
+  const rect = bar.getBoundingClientRect()
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+  if (audioRef.value && audioDuration.value) {
+    audioRef.value.currentTime = ratio * audioDuration.value
+  }
+}
+
+function formatTime(seconds) {
+  if (!seconds || !isFinite(seconds)) return '0:00'
+  const min = Math.floor(seconds / 60)
+  const sec = Math.floor(seconds % 60)
+  return `${min}:${sec.toString().padStart(2, '0')}`
+}
 
 onMounted(async () => {
   await loadSubmission()
@@ -81,6 +106,8 @@ async function toggleAudio(key) {
     URL.revokeObjectURL(audioUrl.value)
     audioUrl.value = null
   }
+  audioCurrentTime.value = 0
+  audioDuration.value = 0
   playingKey.value = key
   try {
     const { data } = await api.get(`/api/submissions/${submission.value.id}/audio/${key}`, { responseType: 'blob' })
@@ -279,7 +306,7 @@ async function rework() {
               <div
                 v-for="(ch, i) in content.chapters"
                 :key="ch.key"
-                class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-wrap"
               >
                 <!-- Icon -->
                 <div class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0 bg-gray-200 dark:bg-gray-700">
@@ -306,10 +333,30 @@ async function rework() {
                 <button
                   v-if="ch.audio_file"
                   @click="toggleAudio(ch.key)"
-                  class="w-8 h-8 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
                 >
                   <i :class="playingKey === ch.key ? 'fas fa-pause' : 'fas fa-play'" class="text-sm"></i>
                 </button>
+
+                <!-- Progress bar -->
+                <div
+                  v-if="playingKey === ch.key && audioDuration > 0"
+                  class="w-full col-span-full flex items-center gap-2 mt-1 px-1"
+                >
+                  <span class="text-[10px] tabular-nums text-gray-400 w-8 text-right flex-shrink-0">{{ formatTime(audioCurrentTime) }}</span>
+                  <div
+                    class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full cursor-pointer group relative"
+                    @click="seekAudio($event)"
+                  >
+                    <div
+                      class="h-full bg-primary-500 rounded-full transition-[width] duration-100 relative"
+                      :style="{ width: (audioCurrentTime / audioDuration * 100) + '%' }"
+                    >
+                      <div class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-primary-600 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    </div>
+                  </div>
+                  <span class="text-[10px] tabular-nums text-gray-400 w-8 flex-shrink-0">{{ formatTime(audioDuration) }}</span>
+                </div>
               </div>
             </div>
 
@@ -320,7 +367,9 @@ async function rework() {
           <audio
             ref="audioRef"
             :src="audioUrl"
-            @ended="playingKey = null"
+            @ended="playingKey = null; audioCurrentTime = 0; audioDuration = 0"
+            @timeupdate="onTimeUpdate"
+            @loadedmetadata="onTimeUpdate"
             class="hidden"
           ></audio>
 
