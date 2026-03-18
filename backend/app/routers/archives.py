@@ -19,7 +19,7 @@ from app.schemas import (
 )
 from app.auth import require_permission
 from app.services import storage
-from app.services.discord_bot import delete_discord_thread, edit_discord_thread
+from app.services.discord_client import delete_discord_thread, edit_discord_thread
 from app.services import archive_editor
 from app.services import audio_processor
 from app.config import get_settings

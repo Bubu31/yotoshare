@@ -12,6 +12,7 @@ env:
   IMAGE_NAME_BACKEND: bubu31/yotoshare-backend
   IMAGE_NAME_FRONTEND: bubu31/yotoshare-frontend
   IMAGE_NAME_NGINX: bubu31/yotoshare-nginx
+  IMAGE_NAME_DISCORD_BOT: bubu31/yotoshare-discord-bot
 
 jobs:
   test:
@@ -156,6 +157,42 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./nginx
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  build-and-push-discord-bot:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_DISCORD_BOT }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=
+
+      - name: Build and push Discord Bot
+        uses: docker/build-push-action@v5
+        with:
+          context: ./discord-bot
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import Archive, Pack
 from app.schemas import DiscordPublishRequest, DiscordPublishPackRequest, DiscordPublishResponse
 from app.auth import require_permission
-from app.services.discord_bot import publish_archive, publish_pack
+from app.services.discord_client import publish_archive, publish_pack
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)

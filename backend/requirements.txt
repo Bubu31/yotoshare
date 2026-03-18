@@ -8,7 +8,6 @@ bcrypt==4.0.1
 pydantic==2.5.3
 pydantic-settings==2.1.0
 aiofiles==23.2.1
-py-cord==2.7.1
 Pillow>=10.2.0
 numpy>=1.26.4
 httpx==0.26.0

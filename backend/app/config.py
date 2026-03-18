@@ -21,10 +21,8 @@ class Settings(BaseSettings):
     covers_dir: str = "covers"
     packs_dir: str = "packs"
 
-    # Discord
-    discord_bot_token: str = ""
-    discord_guild_id: str = ""
-    discord_forum_channel_id: str = ""
+    # Discord bot service URL (external service)
+    discord_bot_url: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:5173"

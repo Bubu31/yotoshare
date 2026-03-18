@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,8 +16,8 @@ from app.routers import (
     roles_router,
     packs_router,
     submissions_router,
+    service_router,
 )
-from app.services.discord_bot import run_bot_in_background
 from app.config import get_settings
 
 settings = get_settings()
@@ -27,16 +25,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.discord_bot_token:
-        import fcntl
-        lock_file = open("/tmp/yotoshare-discord.lock", "w")
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
-            bot_thread.start()
-        except OSError:
-            pass  # Another worker already runs the bot
-
     yield
 
 
@@ -66,13 +54,13 @@ app.include_router(share_router)
 app.include_router(roles_router)
 app.include_router(packs_router)
 app.include_router(submissions_router)
+app.include_router(service_router)
 
 
 @app.get("/api/health")
 async def health_check():
     from fastapi.responses import JSONResponse
     from app.database import SessionLocal
-    from app.services.discord_bot import bot_ready, bot_error, bot
 
     health_status = {"status": "healthy", "checks": {}}
     is_healthy = True
@@ -87,19 +75,6 @@ async def health_check():
     except Exception as e:
         health_status["checks"]["database"] = f"error: {str(e)}"
         is_healthy = False
-
-    # Check Discord bot if configured
-    if settings.discord_bot_token:
-        if bot_error:
-            health_status["checks"]["discord_bot"] = f"error: {bot_error}"
-            is_healthy = False
-        elif not bot_ready.is_set():
-            health_status["checks"]["discord_bot"] = "starting"
-        elif bot.is_closed():
-            health_status["checks"]["discord_bot"] = "disconnected"
-            is_healthy = False
-        else:
-            health_status["checks"]["discord_bot"] = "connected"
 
     if not is_healthy:
         health_status["status"] = "unhealthy"
