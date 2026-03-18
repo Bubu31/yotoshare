@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -6,8 +7,9 @@ import zipfile
 from collections import defaultdict
 from datetime import datetime, timezone
 
+import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -152,8 +154,8 @@ async def get_submission_cover(
     if not cover_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier cover introuvable")
 
-    with open(cover_path, "rb") as f:
-        data = f.read()
+    async with aiofiles.open(cover_path, "rb") as f:
+        data = await f.read()
     return Response(content=data, media_type="image/jpeg")
 
 
@@ -246,11 +248,6 @@ async def get_submission_audio(
 
         temp_dir, audio_path, editor = result
 
-        with open(audio_path, "rb") as f:
-            audio_data = f.read()
-
-        editor.cleanup()
-
         ext = os.path.splitext(audio_path)[1].lower()
         content_type = "audio/mpeg"
         if ext == ".m4a":
@@ -260,7 +257,15 @@ async def get_submission_audio(
         elif ext == ".wav":
             content_type = "audio/wav"
 
-        return Response(content=audio_data, media_type=content_type)
+        async def audio_iterator():
+            try:
+                async with aiofiles.open(audio_path, "rb") as f:
+                    while chunk := await f.read(64 * 1024):
+                        yield chunk
+            finally:
+                editor.cleanup()
+
+        return StreamingResponse(audio_iterator(), media_type=content_type)
     except HTTPException:
         raise
     except Exception as e:
@@ -282,13 +287,13 @@ async def get_submission_icon(
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier archive introuvable")
 
-    try:
-        with zipfile.ZipFile(archive_path, "r") as zf:
+    def _read_icon_sync(path: str, key: str):
+        with zipfile.ZipFile(path, "r") as zf:
             namelist = zf.namelist()
 
             card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
             if not card_data_paths:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+                return None, None
 
             with zf.open(card_data_paths[0]) as f:
                 card_data = json.load(f)
@@ -297,13 +302,13 @@ async def get_submission_icon(
             chapter = None
             chapter_index = None
             for i, ch in enumerate(chapters):
-                if ch.get("key") == chapter_key:
+                if ch.get("key") == key:
                     chapter = ch
                     chapter_index = i
                     break
 
             if chapter is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+                return None, None
 
             icon_filename = chapter.get("display", {}).get("icon16x16") if chapter.get("display") else None
             if icon_filename and icon_filename.startswith("yoto:"):
@@ -322,7 +327,7 @@ async def get_submission_icon(
             if not matched_entry:
                 for entry in icon_entries:
                     basename = entry.split("/")[-1]
-                    if basename.startswith(f"{chapter_key}-") or basename.startswith(f"{chapter_key} -"):
+                    if basename.startswith(f"{key}-") or basename.startswith(f"{key} -"):
                         matched_entry = entry
                         break
 
@@ -330,11 +335,17 @@ async def get_submission_icon(
                 matched_entry = icon_entries[chapter_index]
 
             if not matched_entry:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+                return None, None
 
             icon_data = zf.read(matched_entry)
             media_type = "image/png" if matched_entry.lower().endswith(".png") else "image/jpeg"
-            return Response(content=icon_data, media_type=media_type)
+            return icon_data, media_type
+
+    try:
+        icon_data, media_type = await asyncio.to_thread(_read_icon_sync, archive_path, chapter_key)
+        if icon_data is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icône introuvable")
+        return Response(content=icon_data, media_type=media_type)
 
     except HTTPException:
         raise
