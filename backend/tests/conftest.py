@@ -3,9 +3,11 @@
 import os
 import json
 import pytest
+import pytest_asyncio
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from httpx import AsyncClient, ASGITransport
 
 # Set test env vars BEFORE any app imports
@@ -28,10 +30,15 @@ from app.models import (
     pack_archives, Submission,
 )
 
-# Use in-memory SQLite for tests
+# Sync engine for table creation and test data insertion
 TEST_DB_URL = "sqlite:///./data/test.db"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Async engine for the FastAPI app dependency override
+ASYNC_TEST_DB_URL = "sqlite+aiosqlite:///./data/test.db"
+async_engine = create_async_engine(ASYNC_TEST_DB_URL)
+AsyncTestSession = async_sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +52,7 @@ def setup_db():
 
 @pytest.fixture
 def db():
-    """Provide a test database session."""
+    """Provide a synchronous test database session (for fixture data insertion)."""
     session = TestSession()
     try:
         yield session
@@ -55,12 +62,10 @@ def db():
 
 @pytest.fixture
 def override_db(db):
-    """Override the FastAPI get_db dependency with the test session."""
-    def _get_test_db():
-        try:
-            yield db
-        finally:
-            pass
+    """Override the FastAPI get_db dependency with an async test session."""
+    async def _get_test_db():
+        async with AsyncTestSession() as session:
+            yield session
 
     app.dependency_overrides[get_db] = _get_test_db
     yield db
