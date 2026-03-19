@@ -77,9 +77,6 @@ function iconFailed(subId, key) {
   return !!iconErrors.value[`${subId}-${key}`]
 }
 
-function isYotoIcon(icon) {
-  return icon && icon.startsWith('yoto:')
-}
 
 function downloadUrl(id) {
   return `/api/submissions/rework/${id}/download`
@@ -326,7 +323,7 @@ function stopAudio() {
                 <!-- Icon -->
                 <div class="w-9 h-9 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-xs text-gray-400 dark:text-gray-500 font-medium">
                   <img
-                    v-if="ch.key && !isYotoIcon(ch.icon) && !iconFailed(selectedSub.id, ch.key)"
+                    v-if="ch.key && !iconFailed(selectedSub.id, ch.key)"
                     :src="iconUrl(selectedSub.id, ch.key)"
                     class="w-full h-full object-cover"
                     @error="onIconError(selectedSub.id, ch.key)"
