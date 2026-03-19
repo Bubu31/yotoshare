@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -562,11 +563,67 @@ async def get_archive_content(
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
-    try:
-        logger.debug("Loading archive content from: %s", archive_path)
-        content = archive_editor.get_archive_content(archive_path)
-        logger.debug("Got content with %d chapters", len(content.get('chapters', [])))
+    # Use extracted data if available; extract on first access
+    data_dir = storage.get_archive_data_dir(archive.archive_path)
+    if not data_dir:
+        data_dir = await asyncio.to_thread(storage.extract_archive_data, archive_path, archive.archive_path)
 
+    if data_dir:
+        card_data_path = os.path.join(data_dir, "card-data.json")
+        if os.path.exists(card_data_path):
+            try:
+                with open(card_data_path, "r", encoding="utf-8") as f:
+                    card_data = json.load(f)
+
+                icons_dir = os.path.join(data_dir, "icons")
+                audio_dir = os.path.join(data_dir, "audio")
+                has_cover = any(
+                    os.path.exists(os.path.join(data_dir, f"cover{ext}"))
+                    for ext in (".jpg", ".png")
+                )
+                nfo_path = os.path.join(data_dir, "info.nfo")
+                nfo = open(nfo_path, "r", encoding="utf-8", errors="replace").read() if os.path.exists(nfo_path) else None
+
+                chapters = []
+                for i, ch in enumerate(card_data.get("content", {}).get("chapters", [])):
+                    key = ch.get("key") or f"chapter_{i}"
+                    icon_file = None
+                    for ext in (".png", ".jpg", ".jpeg"):
+                        if os.path.exists(os.path.join(icons_dir, f"{key}{ext}")):
+                            icon_file = f"{key}{ext}"
+                            break
+                    audio_file = None
+                    for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+                        if os.path.exists(os.path.join(audio_dir, f"{key}{ext}")):
+                            audio_file = f"{key}{ext}"
+                            break
+                    duration = ch.get("duration")
+                    if duration and duration < 100000:
+                        duration = duration * 1000
+                    chapters.append(ChapterDetail(
+                        key=key,
+                        title=ch.get("title"),
+                        label=ch.get("overlayLabel"),
+                        duration=duration,
+                        audio_file=audio_file,
+                        icon_file=icon_file,
+                        order=i,
+                    ))
+
+                return ArchiveContent(
+                    id=archive.id,
+                    title=archive.title,
+                    chapters=chapters,
+                    has_cover=has_cover,
+                    nfo=nfo,
+                )
+            except Exception:
+                logger.warning("Failed to read extracted data for archive %d, falling back to ZIP", archive_id)
+
+    # Fallback: read directly from ZIP
+    try:
+        logger.debug("Loading archive content from ZIP: %s", archive_path)
+        content = await asyncio.to_thread(archive_editor.get_archive_content, archive_path)
         chapters = [
             ChapterDetail(
                 key=ch.get("key") or f"chapter_{i}",
@@ -579,7 +636,6 @@ async def get_archive_content(
             )
             for i, ch in enumerate(content.get("chapters", []))
         ]
-
         return ArchiveContent(
             id=archive.id,
             title=archive.title,
@@ -612,6 +668,7 @@ async def update_chapters(
         chapters_data = [ch.model_dump() for ch in request.chapters]
         archive_editor.update_chapters(archive_path, chapters_data)
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -662,6 +719,7 @@ async def update_archive_cover_in_zip(
 
         await db.commit()
 
+        storage.delete_archive_data(archive.archive_path)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
 
@@ -682,15 +740,25 @@ async def get_chapter_icon(
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
+    # Fast path: extracted data
+    data_dir = storage.get_archive_data_dir(archive.archive_path)
+    if data_dir:
+        icons_dir = os.path.join(data_dir, "icons")
+        for ext in (".png", ".jpg", ".jpeg"):
+            icon_path = os.path.join(icons_dir, f"{chapter_key}{ext}")
+            if os.path.exists(icon_path):
+                media_type = "image/png" if ext == ".png" else "image/jpeg"
+                return FileResponse(icon_path, media_type=media_type)
+
+    # Fallback: read from ZIP
     archive_path = storage.get_archive_path(archive.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     try:
-        icon_data = archive_editor.get_chapter_icon(archive_path, chapter_key)
+        icon_data = await asyncio.to_thread(archive_editor.get_chapter_icon, archive_path, chapter_key)
         if not icon_data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icon not found")
-
         return Response(content=icon_data, media_type="image/png")
     except HTTPException:
         raise
@@ -723,6 +791,7 @@ async def update_chapter_icon(
         archive.file_size = os.path.getsize(archive_path)
         await db.commit()
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
 
@@ -748,21 +817,33 @@ async def get_chapter_waveform(
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
+    # Fast path: extracted data
+    data_dir = storage.get_archive_data_dir(archive.archive_path)
+    if data_dir:
+        audio_dir = os.path.join(data_dir, "audio")
+        for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+            audio_path = os.path.join(audio_dir, f"{chapter_key}{ext}")
+            if os.path.exists(audio_path):
+                try:
+                    duration_ms = await asyncio.to_thread(audio_processor.get_audio_duration, audio_path)
+                    waveform_samples = await asyncio.to_thread(audio_processor.get_waveform_data, audio_path, samples)
+                    return WaveformResponse(duration_ms=duration_ms, samples=waveform_samples)
+                except Exception as e:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    # Fallback: extract from ZIP
     archive_path = storage.get_archive_path(archive.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     editor = None
     try:
-        result = archive_editor.get_chapter_audio_path_from_archive(archive_path, chapter_key)
+        result = await asyncio.to_thread(archive_editor.get_chapter_audio_path_from_archive, archive_path, chapter_key)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio not found")
-
         temp_dir, audio_path, editor = result
-
-        duration_ms = audio_processor.get_audio_duration(audio_path)
-        waveform_samples = audio_processor.get_waveform_data(audio_path, samples)
-
+        duration_ms = await asyncio.to_thread(audio_processor.get_audio_duration, audio_path)
+        waveform_samples = await asyncio.to_thread(audio_processor.get_waveform_data, audio_path, samples)
         return WaveformResponse(duration_ms=duration_ms, samples=waveform_samples)
     except HTTPException:
         raise
@@ -786,32 +867,36 @@ async def get_chapter_audio(
     if not archive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
 
+    content_types = {
+        ".m4a": "audio/mp4", ".m4b": "audio/mp4", ".aac": "audio/mp4",
+        ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+        ".wav": "audio/wav", ".flac": "audio/flac",
+    }
+
+    # Fast path: extracted data → FileResponse (no full read into memory)
+    data_dir = storage.get_archive_data_dir(archive.archive_path)
+    if data_dir:
+        audio_dir = os.path.join(data_dir, "audio")
+        for ext in (".m4a", ".mp3", ".m4b", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+            audio_path = os.path.join(audio_dir, f"{chapter_key}{ext}")
+            if os.path.exists(audio_path):
+                return FileResponse(audio_path, media_type=content_types.get(ext, "audio/mpeg"))
+
+    # Fallback: extract from ZIP
     archive_path = storage.get_archive_path(archive.archive_path)
     if not archive_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     try:
-        result = archive_editor.get_chapter_audio_path_from_archive(archive_path, chapter_key)
+        result = await asyncio.to_thread(archive_editor.get_chapter_audio_path_from_archive, archive_path, chapter_key)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio not found")
-
         temp_dir, audio_path, editor = result
-
         with open(audio_path, "rb") as f:
             audio_data = f.read()
-
         editor.cleanup()
-
         ext = os.path.splitext(audio_path)[1].lower()
-        content_type = "audio/mpeg"
-        if ext == ".m4a":
-            content_type = "audio/mp4"
-        elif ext == ".ogg":
-            content_type = "audio/ogg"
-        elif ext == ".wav":
-            content_type = "audio/wav"
-
-        return Response(content=audio_data, media_type=content_type)
+        return Response(content=audio_data, media_type=content_types.get(ext, "audio/mpeg"))
     except HTTPException:
         raise
     except Exception as e:
@@ -910,6 +995,7 @@ async def split_chapter(
             finally:
                 shutil.rmtree(split_dir, ignore_errors=True)
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -973,6 +1059,7 @@ async def trim_chapter(
             editor.write_card_data(card_data)
             editor.save()
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -1081,6 +1168,7 @@ async def merge_chapters(
             editor.write_card_data(card_data)
             editor.save()
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -1122,6 +1210,7 @@ async def add_chapter(
             chapter_title,
         )
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -1160,6 +1249,7 @@ async def replace_chapter_audio(
             audio_file.filename,
         )
 
+        storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
         archive = await _load_archive(db, archive_id)
         sync_discord_after_edit(archive)
@@ -1220,6 +1310,7 @@ async def update_nfo(
         archive.file_size = os.path.getsize(archive_path)
         await db.commit()
 
+        storage.delete_archive_data(archive.archive_path)
         archive = await _load_archive(db, archive_id)
         return archive_to_response(archive)
     except Exception as e:

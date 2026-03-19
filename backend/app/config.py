@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     def submissions_data_path(self) -> str:
         return f"{self.nas_mount_path}/submissions-data"
 
+    @property
+    def archives_data_path(self) -> str:
+        return f"{self.nas_mount_path}/archives-data"
+
     class Config:
         env_file = (".env", "../.env")
         extra = "ignore"

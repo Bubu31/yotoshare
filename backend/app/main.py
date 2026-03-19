@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -19,13 +20,34 @@ from app.routers import (
     service_router,
 )
 from app.config import get_settings
+from app.services import storage
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+GC_INTERVAL_SECONDS = 600       # run GC every 10 minutes
+ARCHIVE_CACHE_TTL_SECONDS = 1800  # 30 minutes idle → evict
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    async def _gc_loop():
+        while True:
+            await asyncio.sleep(GC_INTERVAL_SECONDS)
+            try:
+                n = storage.cleanup_old_archive_data(ARCHIVE_CACHE_TTL_SECONDS)
+                if n:
+                    logger.info("Archive cache GC: removed %d expired extraction(s)", n)
+            except Exception as exc:
+                logger.warning("Archive cache GC error: %s", exc)
+
+    task = asyncio.create_task(_gc_loop())
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
