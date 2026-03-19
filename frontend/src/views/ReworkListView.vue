@@ -114,9 +114,12 @@ function toggleChapter(subId, key) {
   audioDuration.value = 0
 
   const audio = new Audio(`/api/submissions/rework/${subId}/audio/${key}`)
+  audio.onloadedmetadata = () => {
+    if (isFinite(audio.duration)) audioDuration.value = audio.duration
+  }
   audio.ontimeupdate = () => {
     audioProgress.value = audio.currentTime
-    audioDuration.value = audio.duration || 0
+    if (isFinite(audio.duration)) audioDuration.value = audio.duration
   }
   audio.onended = () => {
     playingKey.value = null
