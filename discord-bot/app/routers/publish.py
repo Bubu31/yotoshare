@@ -14,7 +14,7 @@ router = APIRouter(tags=["publish"])
 class PublishArchiveRequest(BaseModel):
     archive_id: int
     title: str
-    author: str
+    author: Optional[str] = None
     description: str
     cover_url: Optional[str] = None
     file_size: int = 0

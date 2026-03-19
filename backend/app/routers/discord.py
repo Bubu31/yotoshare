@@ -55,7 +55,7 @@ async def publish_to_discord(
         post_id = await publish_archive(
             archive_id=archive.id,
             title=archive.title,
-            author=archive.author,
+            author=archive.author or "",
             description=archive.description or "",
             cover_url=cover_url,
             file_size=archive.file_size,
