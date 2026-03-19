@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.routers.publish import router as publish_router
 from app.routers.thread import router as thread_router
 from app.routers.tag import router as tag_router
+from app.routers.notify import router as notify_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ app = FastAPI(title="YotoShare Discord Bot", version="1.0.0", lifespan=lifespan)
 app.include_router(publish_router)
 app.include_router(thread_router)
 app.include_router(tag_router)
+app.include_router(notify_router)
 
 
 @app.get("/health")

@@ -20,6 +20,7 @@ from app.schemas import SubmissionResponse, SubmissionReviewRequest, ReworkSubmi
 from app.auth import require_permission
 from app.services import storage
 from app.services import archive_editor
+from app.services import discord_client
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,20 @@ async def create_submission(
     )
     db.add(submission)
     await db.commit()
+    await db.refresh(submission)
+
+    # Notify via Discord DM (fire-and-forget, don't block the response)
+    try:
+        await discord_client.notify_new_submission(
+            submission_id=submission.id,
+            title=metadata.get("title"),
+            pseudonym=pseudonym.strip() if pseudonym else None,
+            chapters_count=metadata.get("chapters_count"),
+            file_size=file_size,
+            is_rework=parent_submission_id is not None,
+        )
+    except Exception:
+        logger.warning("Failed to send submission notification DM", exc_info=True)
 
     return {"message": "Votre archive a été soumise et sera examinée par un modérateur. Merci !"}
 

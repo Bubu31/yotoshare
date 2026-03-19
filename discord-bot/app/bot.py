@@ -425,6 +425,51 @@ async def _do_edit_thread(
         return False
 
 
+async def _do_notify_submission(
+    submission_id: int,
+    title: Optional[str] = None,
+    pseudonym: Optional[str] = None,
+    chapters_count: Optional[int] = None,
+    file_size: int = 0,
+    is_rework: bool = False,
+) -> None:
+    notify_user_id = settings.notify_user_id
+    if not notify_user_id:
+        logger.warning("NOTIFY_USER_ID not configured, skipping submission DM")
+        return
+
+    try:
+        user = await bot.fetch_user(int(notify_user_id))
+    except Exception as e:
+        logger.error("Failed to fetch notify user %s: %s", notify_user_id, e)
+        return
+
+    size_str = format_file_size(file_size) if file_size else "Inconnu"
+
+    if is_rework:
+        embed_title = "Re-soumission (rework)"
+        embed_color = discord.Color.yellow()
+    else:
+        embed_title = "Nouvelle soumission"
+        embed_color = discord.Color.orange()
+
+    embed = discord.Embed(
+        title=embed_title,
+        color=embed_color,
+    )
+    embed.add_field(name="Titre", value=title or "Sans titre", inline=True)
+    embed.add_field(name="Pseudo", value=pseudonym or "Anonyme", inline=True)
+    if chapters_count:
+        embed.add_field(name="Chapitres", value=str(chapters_count), inline=True)
+    embed.add_field(name="Taille", value=size_str, inline=True)
+    embed.set_footer(text=f"ID soumission : {submission_id}")
+
+    try:
+        await user.send(embed=embed)
+    except discord.Forbidden:
+        logger.error("Cannot DM notify user %s (DMs disabled)", notify_user_id)
+
+
 async def _do_create_forum_tag(tag_name: str, emoji: str = "🗄️") -> bool:
     guild = bot.get_guild(int(settings.discord_guild_id))
     if not guild:

@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # Shared inter-service key (same value as SERVICE_API_KEY in YotoShare)
     service_api_key: str = ""
 
+    # Discord user ID to receive DM notifications
+    notify_user_id: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

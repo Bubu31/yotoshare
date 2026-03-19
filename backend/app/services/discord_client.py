@@ -86,6 +86,39 @@ async def publish_pack(
 
 # ─── Called from sync code in archives.py ─────────────────────────────────
 
+async def notify_new_submission(
+    submission_id: int,
+    title: str | None = None,
+    pseudonym: str | None = None,
+    chapters_count: int | None = None,
+    file_size: int = 0,
+    is_rework: bool = False,
+) -> bool:
+    url = _bot_url()
+    if not url:
+        logger.warning("DISCORD_BOT_URL not configured, skipping submission notification")
+        return False
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{url}/notify/submission",
+                json={
+                    "submission_id": submission_id,
+                    "title": title,
+                    "pseudonym": pseudonym,
+                    "chapters_count": chapters_count,
+                    "file_size": file_size,
+                    "is_rework": is_rework,
+                },
+                headers=_headers(),
+                timeout=15.0,
+            )
+            return r.status_code == 200
+    except Exception as e:
+        logger.error("Failed to notify submission %d: %s", submission_id, e)
+        return False
+
+
 def delete_discord_thread(thread_id: str) -> bool:
     url = _bot_url()
     if not url:
