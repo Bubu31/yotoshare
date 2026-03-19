@@ -175,9 +175,10 @@ async def on_interaction(interaction: discord.Interaction):
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-def format_duration(seconds: int) -> str:
-    if not seconds:
+def format_duration(ms: int) -> str:
+    if not ms:
         return "Inconnu"
+    seconds = round(ms / 1000)
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     secs = seconds % 60
