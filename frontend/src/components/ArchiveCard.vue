@@ -45,7 +45,7 @@ const fileSize = computed(() => {
 
 const duration = computed(() => {
   if (!props.archive.total_duration) return null
-  const totalSeconds = props.archive.total_duration
+  const totalSeconds = Math.round(props.archive.total_duration / 1000)
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
