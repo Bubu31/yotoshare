@@ -56,6 +56,17 @@ function formatDuration(ms) {
   return `${min}:${sec.toString().padStart(2, '0')}`
 }
 
+async function deleteSubmission(sub) {
+  if (!confirm(`Supprimer la soumission "${sub.title || 'Sans titre'}" ?`)) return
+  try {
+    await api.delete(`/api/submissions/${sub.id}`)
+    submissions.value = submissions.value.filter(s => s.id !== sub.id)
+    showMessage('success', 'Soumission supprimée')
+  } catch (e) {
+    showMessage('error', e.response?.data?.detail || 'Erreur lors de la suppression')
+  }
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -150,6 +161,14 @@ const statusColors = {
         </div>
         <div v-if="sub.rework_comment && activeTab === 'rework'" class="mt-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-sm text-orange-700 dark:text-orange-400">
           <i class="fas fa-wrench mr-1.5"></i>{{ sub.rework_comment }}
+        </div>
+        <div v-if="activeTab === 'rework'" class="mt-2 flex justify-end">
+          <button
+            @click="deleteSubmission(sub)"
+            class="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+          >
+            <i class="fas fa-trash mr-1"></i>Supprimer
+          </button>
         </div>
         <div v-if="sub.rejection_reason" class="mt-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-700 dark:text-red-400">
           <i class="fas fa-comment-slash mr-1.5"></i>{{ sub.rejection_reason }}
