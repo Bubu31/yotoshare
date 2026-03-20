@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 intents = discord.Intents.none()
-intents.guilds = True
 
 bot = commands.Bot(intents=intents)
 bot_ready = threading.Event()
@@ -209,11 +208,7 @@ async def _do_publish(
     chapters: Optional[List[dict]],
     categories: Optional[List[str]] = None,
 ) -> str:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        raise ValueError(f"Guild not found (ID: {settings.discord_guild_id})")
-
-    channel = guild.get_channel(int(settings.discord_forum_channel_id))
+    channel = await bot.fetch_channel(int(settings.discord_forum_channel_id))
     if not channel or not isinstance(channel, discord.ForumChannel):
         raise ValueError(f"Forum channel not found (ID: {settings.discord_forum_channel_id})")
 
@@ -282,11 +277,7 @@ async def _do_publish_pack(
     total_size: int,
     archive_titles: List[str],
 ) -> str:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        raise ValueError(f"Guild not found (ID: {settings.discord_guild_id})")
-
-    channel = guild.get_channel(int(settings.discord_forum_channel_id))
+    channel = await bot.fetch_channel(int(settings.discord_forum_channel_id))
     if not channel or not isinstance(channel, discord.ForumChannel):
         raise ValueError(f"Forum channel not found (ID: {settings.discord_forum_channel_id})")
 
@@ -328,17 +319,11 @@ async def _do_publish_pack(
 
 
 async def _do_delete_thread(thread_id: str) -> bool:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        return False
     try:
-        thread = guild.get_thread(int(thread_id))
-        if not thread:
-            try:
-                thread = await bot.fetch_channel(int(thread_id))
-            except discord.NotFound:
-                return True
+        thread = await bot.fetch_channel(int(thread_id))
         await thread.delete()
+        return True
+    except discord.NotFound:
         return True
     except Exception as e:
         logger.error("Failed to delete thread %s: %s", thread_id, e)
@@ -358,21 +343,12 @@ async def _do_edit_thread(
     categories: Optional[List[str]] = None,
     archive_id: Optional[int] = None,
 ) -> bool:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        return False
-
-    channel = guild.get_channel(int(settings.discord_forum_channel_id))
-    if not channel or not isinstance(channel, discord.ForumChannel):
-        return False
-
     try:
-        thread = guild.get_thread(int(thread_id))
-        if not thread:
-            try:
-                thread = await bot.fetch_channel(int(thread_id))
-            except discord.NotFound:
-                return False
+        channel = await bot.fetch_channel(int(settings.discord_forum_channel_id))
+        if not channel or not isinstance(channel, discord.ForumChannel):
+            return False
+
+        thread = await bot.fetch_channel(int(thread_id))
 
         applied_tags = []
         if categories:
@@ -471,10 +447,7 @@ async def _do_notify_submission(
 
 
 async def _do_create_forum_tag(tag_name: str, emoji: str = "🗄️") -> bool:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        return False
-    channel = guild.get_channel(int(settings.discord_forum_channel_id))
+    channel = await bot.fetch_channel(int(settings.discord_forum_channel_id))
     if not channel or not isinstance(channel, discord.ForumChannel):
         return False
     existing_tags = {tag.name.lower(): tag for tag in channel.available_tags}
@@ -488,10 +461,7 @@ async def _do_create_forum_tag(tag_name: str, emoji: str = "🗄️") -> bool:
 
 
 async def _do_delete_forum_tag(tag_name: str) -> bool:
-    guild = bot.get_guild(int(settings.discord_guild_id))
-    if not guild:
-        return False
-    channel = guild.get_channel(int(settings.discord_forum_channel_id))
+    channel = await bot.fetch_channel(int(settings.discord_forum_channel_id))
     if not channel or not isinstance(channel, discord.ForumChannel):
         return False
     new_tags = [tag for tag in channel.available_tags if tag.name.lower() != tag_name.lower()]
