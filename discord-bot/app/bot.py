@@ -5,7 +5,6 @@ from typing import Optional, List
 
 import discord
 import httpx
-from discord.ext import commands
 
 from app.config import get_settings
 
@@ -14,7 +13,11 @@ settings = get_settings()
 
 intents = discord.Intents.none()
 
-bot = commands.Bot(intents=intents)
+bot = discord.Client(
+    intents=intents,
+    chunk_guilds_at_startup=False,
+    member_cache_flags=discord.MemberCacheFlags.none(),
+)
 bot_ready = threading.Event()
 bot_error: Optional[str] = None
 bot_loop: Optional[asyncio.AbstractEventLoop] = None
