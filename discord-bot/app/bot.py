@@ -12,8 +12,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-intents = discord.Intents.default()
-intents.message_content = True
+intents = discord.Intents.none()
 intents.guilds = True
 
 bot = commands.Bot(intents=intents)
