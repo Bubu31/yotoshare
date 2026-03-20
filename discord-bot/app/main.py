@@ -1,11 +1,11 @@
+import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.bot import bot, bot_ready, bot_error, run_bot_in_background
+from app.bot import bot, bot_ready, bot_error, start_bot
 from app.config import get_settings
 from app.routers.publish import router as publish_router
 from app.routers.thread import router as thread_router
@@ -19,13 +19,20 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    bot_task = None
     if settings.discord_bot_token:
-        bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
-        bot_thread.start()
-        logger.info("Discord bot thread started")
+        bot_task = asyncio.create_task(start_bot())
+        logger.info("Discord bot started in main event loop")
     else:
         logger.warning("DISCORD_BOT_TOKEN not set — bot will not start")
     yield
+    if bot_task and not bot_task.done():
+        await bot.close()
+        bot_task.cancel()
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="YotoShare Discord Bot", version="1.0.0", lifespan=lifespan)

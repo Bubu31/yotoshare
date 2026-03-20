@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import require_service_key
-from app.bot import _run_in_bot_loop, _do_notify_submission
+from app.bot import _do_notify_submission
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["notify"])
@@ -23,16 +23,13 @@ class NotifySubmissionRequest(BaseModel):
 @router.post("/notify/submission")
 async def notify_submission(data: NotifySubmissionRequest, _=Depends(require_service_key)):
     try:
-        _run_in_bot_loop(
-            _do_notify_submission(
-                submission_id=data.submission_id,
-                title=data.title,
-                pseudonym=data.pseudonym,
-                chapters_count=data.chapters_count,
-                file_size=data.file_size,
-                is_rework=data.is_rework,
-            ),
-            timeout=15.0,
+        await _do_notify_submission(
+            submission_id=data.submission_id,
+            title=data.title,
+            pseudonym=data.pseudonym,
+            chapters_count=data.chapters_count,
+            file_size=data.file_size,
+            is_rework=data.is_rework,
         )
         return {"success": True}
     except Exception as e:

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import require_service_key
-from app.bot import _run_in_bot_loop, _do_publish, _do_publish_pack
+from app.bot import _do_publish, _do_publish_pack
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["publish"])
@@ -42,20 +42,17 @@ class PublishResponse(BaseModel):
 @router.post("/publish/archive", response_model=PublishResponse)
 async def publish_archive(data: PublishArchiveRequest, _=Depends(require_service_key)):
     try:
-        thread_id = _run_in_bot_loop(
-            _do_publish(
-                archive_id=data.archive_id,
-                title=data.title,
-                author=data.author,
-                description=data.description,
-                cover_url=data.cover_url,
-                file_size=data.file_size,
-                total_duration=data.total_duration,
-                chapters_count=data.chapters_count,
-                chapters=data.chapters,
-                categories=data.categories,
-            ),
-            timeout=35.0,
+        thread_id = await _do_publish(
+            archive_id=data.archive_id,
+            title=data.title,
+            author=data.author,
+            description=data.description,
+            cover_url=data.cover_url,
+            file_size=data.file_size,
+            total_duration=data.total_duration,
+            chapters_count=data.chapters_count,
+            chapters=data.chapters,
+            categories=data.categories,
         )
         return PublishResponse(success=True, thread_id=thread_id)
     except Exception as e:
@@ -66,16 +63,13 @@ async def publish_archive(data: PublishArchiveRequest, _=Depends(require_service
 @router.post("/publish/pack", response_model=PublishResponse)
 async def publish_pack(data: PublishPackRequest, _=Depends(require_service_key)):
     try:
-        thread_id = _run_in_bot_loop(
-            _do_publish_pack(
-                pack_id=data.pack_id,
-                name=data.name,
-                description=data.description,
-                image_url=data.image_url,
-                total_size=data.total_size,
-                archive_titles=data.archive_titles,
-            ),
-            timeout=35.0,
+        thread_id = await _do_publish_pack(
+            pack_id=data.pack_id,
+            name=data.name,
+            description=data.description,
+            image_url=data.image_url,
+            total_size=data.total_size,
+            archive_titles=data.archive_titles,
         )
         return PublishResponse(success=True, thread_id=thread_id)
     except Exception as e:

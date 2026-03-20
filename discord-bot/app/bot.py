@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import threading
 from typing import Optional, List
 
 import discord
@@ -18,9 +17,8 @@ bot = discord.Client(
     chunk_guilds_at_startup=False,
     member_cache_flags=discord.MemberCacheFlags.none(),
 )
-bot_ready = threading.Event()
+bot_ready = asyncio.Event()
 bot_error: Optional[str] = None
-bot_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 class DownloadButton(discord.ui.View):
@@ -49,9 +47,7 @@ class PackDownloadButton(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    global bot_loop
     logger.info("Bot connected as %s", bot.user)
-    bot_loop = asyncio.get_event_loop()
     bot_ready.set()
 
 
@@ -474,17 +470,6 @@ async def _do_delete_forum_tag(tag_name: str) -> bool:
     return True
 
 
-# ─── Thread-safe wrappers (called from sync FastAPI endpoints via run_coroutine_threadsafe) ──
-
-def _run_in_bot_loop(coro, timeout: float = 30.0):
-    if not bot_ready.wait(timeout=10.0):
-        raise RuntimeError("Discord bot not ready")
-    if not bot_loop:
-        raise RuntimeError("Discord bot loop not available")
-    future = asyncio.run_coroutine_threadsafe(coro, bot_loop)
-    return future.result(timeout=timeout)
-
-
 async def start_bot():
     global bot_error
     try:
@@ -495,14 +480,3 @@ async def start_bot():
     except Exception as e:
         bot_error = f"Failed to start bot: {e}"
         logger.error(bot_error)
-
-
-def run_bot_in_background():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(start_bot())
-    except Exception as e:
-        global bot_error
-        bot_error = str(e)
-        logger.error("Bot error: %s", e)
