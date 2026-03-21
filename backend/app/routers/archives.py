@@ -265,7 +265,7 @@ async def create_archive(
     archive_filename, file_size = await storage.save_archive(archive_file)
 
     archive_path = storage.get_archive_path(archive_filename)
-    metadata = storage.extract_archive_metadata(archive_path)
+    metadata = await asyncio.to_thread(storage.extract_archive_metadata, archive_path)
 
     final_title = title if title else metadata.get("title")
     if not final_title:
@@ -488,13 +488,200 @@ async def delete_archive(
 # ============================================
 
 
+# ============================================
+# Synchronous helpers for async to_thread wrappers
+# ============================================
+
+
+def _execute_split_chapter(archive_path: str, chapter_key: str, split_points: List[int]) -> None:
+    """Synchronous: split a chapter at specific timestamps. Runs in thread pool."""
+    with archive_editor.ArchiveEditor(archive_path) as editor:
+        card_data = editor.read_card_data()
+        chapters = card_data.get("content", {}).get("chapters", [])
+
+        chapter_idx = None
+        chapter = None
+        for i, ch in enumerate(chapters):
+            if ch.get("key") == chapter_key:
+                chapter_idx = i
+                chapter = ch
+                break
+
+        if chapter is None:
+            raise ValueError("Chapter not found")
+
+        audio_file = chapter.get("tracks", [{}])[0].get("file")
+        if not audio_file:
+            raise ValueError("Chapter has no audio")
+
+        audio_path = editor.get_chapter_audio_path(audio_file)
+        if not audio_path:
+            raise ValueError("Audio file not found")
+
+        split_dir = tempfile.mkdtemp(prefix="yoto_split_")
+        try:
+            segment_files = audio_processor.split_audio(
+                audio_path, split_points, split_dir
+            )
+
+            new_chapters = []
+            base_title = chapter.get("title", "Chapter")
+
+            for i, segment_file in enumerate(segment_files):
+                new_key = f"{chapter_key}_{i}" if i > 0 else chapter_key
+
+                ext = os.path.splitext(audio_file)[1]
+                new_audio_filename = f"{new_key}{ext}"
+                new_audio_path = os.path.join(editor.get_audio_path(), new_audio_filename)
+                shutil.copy(segment_file, new_audio_path)
+
+                duration_ms = audio_processor.get_audio_duration(new_audio_path)
+
+                new_chapter = {
+                    "key": new_key,
+                    "title": f"{base_title} (Part {i + 1})" if len(segment_files) > 1 else base_title,
+                    "duration": duration_ms,
+                    "tracks": [{"file": new_audio_filename}],
+                }
+
+                if chapter.get("overlayLabel"):
+                    new_chapter["overlayLabel"] = chapter["overlayLabel"]
+                if chapter.get("display"):
+                    new_chapter["display"] = chapter["display"].copy()
+
+                new_chapters.append(new_chapter)
+
+            if audio_path != new_audio_path:
+                os.remove(audio_path)
+
+            chapters = chapters[:chapter_idx] + new_chapters + chapters[chapter_idx + 1:]
+            card_data["content"]["chapters"] = chapters
+
+            total_duration = sum(ch.get("duration", 0) for ch in chapters)
+            if "metadata" in card_data and "media" in card_data["metadata"]:
+                card_data["metadata"]["media"]["duration"] = total_duration
+
+            editor.write_card_data(card_data)
+            editor.save()
+
+        finally:
+            shutil.rmtree(split_dir, ignore_errors=True)
+
+
+def _execute_trim_chapter(archive_path: str, chapter_key: str, start_ms: int, end_ms: int, mode: str) -> None:
+    """Synchronous: trim a chapter's audio. Runs in thread pool."""
+    with archive_editor.ArchiveEditor(archive_path) as editor:
+        card_data = editor.read_card_data()
+        chapters = card_data.get("content", {}).get("chapters", [])
+
+        chapter = next((ch for ch in chapters if ch.get("key") == chapter_key), None)
+        if not chapter:
+            raise ValueError("Chapter not found")
+
+        audio_file = chapter.get("tracks", [{}])[0].get("file")
+        if not audio_file:
+            raise ValueError("Chapter has no audio")
+
+        audio_path = editor.get_chapter_audio_path(audio_file)
+        if not audio_path:
+            raise ValueError("Audio file not found")
+
+        trimmed_path = audio_processor.trim_audio(
+            audio_path, start_ms, end_ms, mode
+        )
+
+        shutil.move(trimmed_path, audio_path)
+
+        new_duration = audio_processor.get_audio_duration(audio_path)
+        chapter["duration"] = new_duration
+
+        total_duration = sum(ch.get("duration", 0) for ch in chapters)
+        if "metadata" in card_data and "media" in card_data["metadata"]:
+            card_data["metadata"]["media"]["duration"] = total_duration
+
+        editor.write_card_data(card_data)
+        editor.save()
+
+
+def _execute_merge_chapters(archive_path: str, chapter_keys: List[str], new_title: str) -> None:
+    """Synchronous: merge multiple chapters into one. Runs in thread pool."""
+    with archive_editor.ArchiveEditor(archive_path) as editor:
+        card_data = editor.read_card_data()
+        chapters = card_data.get("content", {}).get("chapters", [])
+
+        chapters_to_merge = []
+        chapter_indices = []
+        for key in chapter_keys:
+            for i, ch in enumerate(chapters):
+                if ch.get("key") == key:
+                    chapters_to_merge.append(ch)
+                    chapter_indices.append(i)
+                    break
+
+        if len(chapters_to_merge) != len(chapter_keys):
+            raise ValueError("Some chapters not found")
+
+        audio_paths = []
+        for ch in chapters_to_merge:
+            audio_file = ch.get("tracks", [{}])[0].get("file")
+            if not audio_file:
+                raise ValueError(f"Chapter {ch.get('key')} has no audio")
+            audio_path = editor.get_chapter_audio_path(audio_file)
+            if not audio_path:
+                raise ValueError(f"Audio file not found for chapter {ch.get('key')}")
+            audio_paths.append(audio_path)
+
+        first_audio_file = chapters_to_merge[0].get("tracks", [{}])[0].get("file")
+        ext = os.path.splitext(first_audio_file)[1]
+        merged_filename = f"merged_{chapter_keys[0]}{ext}"
+        merged_path = os.path.join(editor.get_audio_path(), merged_filename)
+
+        audio_processor.merge_audio(audio_paths, merged_path)
+
+        for audio_path in audio_paths:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+
+        merged_duration = audio_processor.get_audio_duration(merged_path)
+
+        merged_chapter = {
+            "key": chapter_keys[0],
+            "title": new_title,
+            "duration": merged_duration,
+            "tracks": [{"file": merged_filename}],
+        }
+
+        first_chapter = chapters_to_merge[0]
+        if first_chapter.get("display"):
+            merged_chapter["display"] = first_chapter["display"].copy()
+
+        first_idx = min(chapter_indices)
+        new_chapters = []
+        removed_indices = set(chapter_indices)
+
+        for i, ch in enumerate(chapters):
+            if i == first_idx:
+                new_chapters.append(merged_chapter)
+            elif i not in removed_indices:
+                new_chapters.append(ch)
+
+        card_data["content"]["chapters"] = new_chapters
+
+        total_duration = sum(ch.get("duration", 0) for ch in new_chapters)
+        if "metadata" in card_data and "media" in card_data["metadata"]:
+            card_data["metadata"]["media"]["duration"] = total_duration
+
+        editor.write_card_data(card_data)
+        editor.save()
+
+
 async def sync_archive_metadata(archive: Archive, db: AsyncSession):
     """Re-extract and sync metadata from archive file to database."""
     archive_path = storage.get_archive_path(archive.archive_path)
     if not archive_path:
         return
 
-    metadata = storage.extract_archive_metadata(archive_path)
+    metadata = await asyncio.to_thread(storage.extract_archive_metadata, archive_path)
 
     if metadata.get("chapters"):
         archive.chapters_data = json.dumps(metadata["chapters"])
@@ -708,7 +895,7 @@ async def update_archive_cover_in_zip(
 
         archive_editor.replace_cover_in_archive(archive_path, image_data, crop_data)
 
-        metadata = storage.extract_archive_metadata(archive_path)
+        metadata = await asyncio.to_thread(storage.extract_archive_metadata, archive_path)
         if metadata.get("cover_data"):
             if archive.cover_path:
                 storage.delete_cover(archive.cover_path)
@@ -922,78 +1109,7 @@ async def split_chapter(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     try:
-        with archive_editor.ArchiveEditor(archive_path) as editor:
-            card_data = editor.read_card_data()
-            chapters = card_data.get("content", {}).get("chapters", [])
-
-            chapter_idx = None
-            chapter = None
-            for i, ch in enumerate(chapters):
-                if ch.get("key") == chapter_key:
-                    chapter_idx = i
-                    chapter = ch
-                    break
-
-            if chapter is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found")
-
-            audio_file = chapter.get("tracks", [{}])[0].get("file")
-            if not audio_file:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter has no audio")
-
-            audio_path = editor.get_chapter_audio_path(audio_file)
-            if not audio_path:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
-
-            split_dir = tempfile.mkdtemp(prefix="yoto_split_")
-            try:
-                segment_files = audio_processor.split_audio(
-                    audio_path, request.split_points, split_dir
-                )
-
-                new_chapters = []
-                base_title = chapter.get("title", "Chapter")
-
-                for i, segment_file in enumerate(segment_files):
-                    import uuid
-                    new_key = f"{chapter_key}_{i}" if i > 0 else chapter_key
-
-                    ext = os.path.splitext(audio_file)[1]
-                    new_audio_filename = f"{new_key}{ext}"
-                    new_audio_path = os.path.join(editor.get_audio_path(), new_audio_filename)
-                    shutil.copy(segment_file, new_audio_path)
-
-                    duration_ms = audio_processor.get_audio_duration(new_audio_path)
-
-                    new_chapter = {
-                        "key": new_key,
-                        "title": f"{base_title} (Part {i + 1})" if len(segment_files) > 1 else base_title,
-                        "duration": duration_ms,
-                        "tracks": [{"file": new_audio_filename}],
-                    }
-
-                    if chapter.get("overlayLabel"):
-                        new_chapter["overlayLabel"] = chapter["overlayLabel"]
-                    if chapter.get("display"):
-                        new_chapter["display"] = chapter["display"].copy()
-
-                    new_chapters.append(new_chapter)
-
-                if audio_path != new_audio_path:
-                    os.remove(audio_path)
-
-                chapters = chapters[:chapter_idx] + new_chapters + chapters[chapter_idx + 1:]
-                card_data["content"]["chapters"] = chapters
-
-                total_duration = sum(ch.get("duration", 0) for ch in chapters)
-                if "metadata" in card_data and "media" in card_data["metadata"]:
-                    card_data["metadata"]["media"]["duration"] = total_duration
-
-                editor.write_card_data(card_data)
-                editor.save()
-
-            finally:
-                shutil.rmtree(split_dir, ignore_errors=True)
+        await asyncio.to_thread(_execute_split_chapter, archive_path, chapter_key, request.split_points)
 
         storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
@@ -1004,6 +1120,8 @@ async def split_chapter(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -1027,37 +1145,7 @@ async def trim_chapter(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     try:
-        with archive_editor.ArchiveEditor(archive_path) as editor:
-            card_data = editor.read_card_data()
-            chapters = card_data.get("content", {}).get("chapters", [])
-
-            chapter = next((ch for ch in chapters if ch.get("key") == chapter_key), None)
-            if not chapter:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found")
-
-            audio_file = chapter.get("tracks", [{}])[0].get("file")
-            if not audio_file:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter has no audio")
-
-            audio_path = editor.get_chapter_audio_path(audio_file)
-            if not audio_path:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
-
-            trimmed_path = audio_processor.trim_audio(
-                audio_path, request.start_ms, request.end_ms, request.mode
-            )
-
-            shutil.move(trimmed_path, audio_path)
-
-            new_duration = audio_processor.get_audio_duration(audio_path)
-            chapter["duration"] = new_duration
-
-            total_duration = sum(ch.get("duration", 0) for ch in chapters)
-            if "metadata" in card_data and "media" in card_data["metadata"]:
-                card_data["metadata"]["media"]["duration"] = total_duration
-
-            editor.write_card_data(card_data)
-            editor.save()
+        await asyncio.to_thread(_execute_trim_chapter, archive_path, chapter_key, request.start_ms, request.end_ms, request.mode)
 
         storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
@@ -1068,6 +1156,8 @@ async def trim_chapter(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -1093,80 +1183,7 @@ async def merge_chapters(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive file not found")
 
     try:
-        with archive_editor.ArchiveEditor(archive_path) as editor:
-            card_data = editor.read_card_data()
-            chapters = card_data.get("content", {}).get("chapters", [])
-
-            chapters_to_merge = []
-            chapter_indices = []
-            for key in request.chapter_keys:
-                for i, ch in enumerate(chapters):
-                    if ch.get("key") == key:
-                        chapters_to_merge.append(ch)
-                        chapter_indices.append(i)
-                        break
-
-            if len(chapters_to_merge) != len(request.chapter_keys):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Some chapters not found")
-
-            audio_paths = []
-            for ch in chapters_to_merge:
-                audio_file = ch.get("tracks", [{}])[0].get("file")
-                if not audio_file:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Chapter {ch.get('key')} has no audio"
-                    )
-                audio_path = editor.get_chapter_audio_path(audio_file)
-                if not audio_path:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Audio file not found for chapter {ch.get('key')}"
-                    )
-                audio_paths.append(audio_path)
-
-            first_audio_file = chapters_to_merge[0].get("tracks", [{}])[0].get("file")
-            ext = os.path.splitext(first_audio_file)[1]
-            merged_filename = f"merged_{request.chapter_keys[0]}{ext}"
-            merged_path = os.path.join(editor.get_audio_path(), merged_filename)
-
-            audio_processor.merge_audio(audio_paths, merged_path)
-
-            for audio_path in audio_paths:
-                if os.path.exists(audio_path):
-                    os.remove(audio_path)
-
-            merged_duration = audio_processor.get_audio_duration(merged_path)
-
-            merged_chapter = {
-                "key": request.chapter_keys[0],
-                "title": request.new_title,
-                "duration": merged_duration,
-                "tracks": [{"file": merged_filename}],
-            }
-
-            first_chapter = chapters_to_merge[0]
-            if first_chapter.get("display"):
-                merged_chapter["display"] = first_chapter["display"].copy()
-
-            first_idx = min(chapter_indices)
-            new_chapters = []
-            removed_indices = set(chapter_indices)
-
-            for i, ch in enumerate(chapters):
-                if i == first_idx:
-                    new_chapters.append(merged_chapter)
-                elif i not in removed_indices:
-                    new_chapters.append(ch)
-
-            card_data["content"]["chapters"] = new_chapters
-
-            total_duration = sum(ch.get("duration", 0) for ch in new_chapters)
-            if "metadata" in card_data and "media" in card_data["metadata"]:
-                card_data["metadata"]["media"]["duration"] = total_duration
-
-            editor.write_card_data(card_data)
-            editor.save()
+        await asyncio.to_thread(_execute_merge_chapters, archive_path, request.chapter_keys, request.new_title)
 
         storage.delete_archive_data(archive.archive_path)
         await sync_archive_metadata(archive, db)
@@ -1177,6 +1194,8 @@ async def merge_chapters(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

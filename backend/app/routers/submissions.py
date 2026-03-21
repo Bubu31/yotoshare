@@ -82,7 +82,7 @@ async def create_submission(
         )
 
     archive_path = storage.get_archive_path(filename)
-    metadata = storage.extract_archive_metadata(archive_path)
+    metadata = await asyncio.to_thread(storage.extract_archive_metadata, archive_path)
 
     if not metadata.get("title") and not metadata.get("chapters"):
         storage.delete_archive(filename)
