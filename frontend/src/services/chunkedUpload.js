@@ -1,4 +1,4 @@
-import axios from 'axios'
+import api from './api'
 
 const CHUNK_SIZE = 5 * 1024 * 1024 // 5 MB
 
@@ -22,7 +22,7 @@ export async function initChunkedUpload(filename, fileSize, metadata = {}) {
     }
   }
 
-  const response = await axios.post('/api/uploads/init', form)
+  const response = await api.post('/api/uploads/init', form)
   return response.data.upload_id
 }
 
@@ -38,7 +38,7 @@ export async function uploadChunk(uploadId, chunkIndex, chunkData) {
   form.append('chunk_index', chunkIndex)
   form.append('chunk', chunkData, `chunk_${chunkIndex}`)
 
-  return axios.post(`/api/uploads/${uploadId}/chunk`, form)
+  return api.post(`/api/uploads/${uploadId}/chunk`, form)
 }
 
 /**
@@ -47,7 +47,7 @@ export async function uploadChunk(uploadId, chunkIndex, chunkData) {
  * @returns {Promise}
  */
 export async function completeChunkedUpload(uploadId) {
-  return axios.post(`/api/uploads/${uploadId}/complete`)
+  return api.post(`/api/uploads/${uploadId}/complete`)
 }
 
 /**
@@ -57,7 +57,7 @@ export async function completeChunkedUpload(uploadId) {
  */
 export async function cancelChunkedUpload(uploadId) {
   try {
-    return axios.delete(`/api/uploads/${uploadId}`)
+    return api.delete(`/api/uploads/${uploadId}`)
   } catch {
     // Ignore cleanup errors
   }
@@ -94,7 +94,7 @@ export async function uploadFileChunked(file, metadata = {}, onProgress = null, 
       }
     }
 
-    const initResponse = await axios.post(initEndpoint, form)
+    const initResponse = await api.post(initEndpoint, form)
     uploadId = initResponse.data.upload_id
 
     let uploadedBytes = 0
@@ -110,7 +110,7 @@ export async function uploadFileChunked(file, metadata = {}, onProgress = null, 
       chunkForm.append('chunk_index', i)
       chunkForm.append('chunk', chunk, `chunk_${i}`)
 
-      await axios.post(`${chunkEndpoint}/${uploadId}/chunk`, chunkForm)
+      await api.post(`${chunkEndpoint}/${uploadId}/chunk`, chunkForm)
 
       uploadedBytes = end
       const uploadProgress = Math.round((uploadedBytes / totalBytes) * 95)
@@ -127,7 +127,7 @@ export async function uploadFileChunked(file, metadata = {}, onProgress = null, 
     }
 
     // 3. Finalize upload
-    const result = await axios.post(`${completeEndpoint}/${uploadId}/complete`)
+    const result = await api.post(`${completeEndpoint}/${uploadId}/complete`)
 
     if (onProgress) {
       onProgress({
@@ -146,7 +146,7 @@ export async function uploadFileChunked(file, metadata = {}, onProgress = null, 
     if (uploadId) {
       try {
         const deleteEndpoint = options.completeEndpoint || '/api/uploads'
-        await axios.delete(`${deleteEndpoint}/${uploadId}`)
+        await api.delete(`${deleteEndpoint}/${uploadId}`)
       } catch {
         // Ignore cleanup errors
       }
