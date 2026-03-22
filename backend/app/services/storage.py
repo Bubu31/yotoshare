@@ -108,7 +108,7 @@ def get_cover_path(filename: str) -> Optional[str]:
 
 
 def extract_archive_metadata(archive_path: str) -> dict:
-    """Extract metadata from archive: title, chapters, duration from card-data.json, cover from cover/cover.png"""
+    """Extract metadata from archive: supports both card-data.json and metadata.json formats"""
     metadata = {
         "title": None,
         "cover_data": None,
@@ -120,55 +120,74 @@ def extract_archive_metadata(archive_path: str) -> dict:
     try:
         with zipfile.ZipFile(archive_path, "r") as zf:
             namelist = zf.namelist()
-            logger.info(f"ZIP contents ({len(namelist)} files): {namelist[:20]}")  # Log first 20 files
+            logger.info(f"ZIP contents ({len(namelist)} files): {namelist[:20]}")
 
-            # Look for card-data.json
+            # Look for metadata file (supports both formats)
             card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
-            logger.info(f"Found card-data.json at: {card_data_paths}")
+            metadata_json_paths = [n for n in namelist if n == "metadata.json"]
+
+            card_data = None
             if card_data_paths:
+                logger.info(f"Found card-data.json at: {card_data_paths[0]}")
                 with zf.open(card_data_paths[0]) as f:
                     try:
                         card_data = json.load(f)
-                        metadata["title"] = card_data.get("title")
-
-                        # Extract duration from metadata
-                        if "metadata" in card_data and "media" in card_data["metadata"]:
-                            media = card_data["metadata"]["media"]
-                            duration = media.get("duration")
-                            if duration is not None:
-                                duration = int(duration)
-                                if duration < 100000:  # Likely seconds, not ms
-                                    duration *= 1000
-                            metadata["total_duration"] = duration
-
-                        # Extract chapters
-                        if "content" in card_data and "chapters" in card_data["content"]:
-                            chapters_raw = card_data["content"]["chapters"]
-                            metadata["chapters_count"] = len(chapters_raw)
-
-                            # Extract relevant chapter info
-                            chapters = []
-                            for ch in chapters_raw:
-                                chapter_info = {
-                                    "key": ch.get("key"),
-                                    "title": ch.get("title"),
-                                    "label": ch.get("overlayLabel"),
-                                    "duration": ch.get("duration"),
-                                    "icon": ch.get("display", {}).get("icon16x16") if ch.get("display") else None,
-                                }
-                                chapters.append(chapter_info)
-                            metadata["chapters"] = chapters
-
                     except json.JSONDecodeError:
+                        logger.warning("Failed to parse card-data.json")
+                        pass
+            elif metadata_json_paths:
+                logger.info(f"Found metadata.json (fallback format)")
+                with zf.open(metadata_json_paths[0]) as f:
+                    try:
+                        card_data = json.load(f)
+                    except json.JSONDecodeError:
+                        logger.warning("Failed to parse metadata.json")
                         pass
 
-            # Look for cover image
+            if card_data:
+                metadata["title"] = card_data.get("title")
+
+                # Extract duration from metadata
+                if "metadata" in card_data and "media" in card_data["metadata"]:
+                    media = card_data["metadata"]["media"]
+                    duration = media.get("duration")
+                    if duration is not None:
+                        duration = int(duration)
+                        if duration < 100000:  # Likely seconds, not ms
+                            duration *= 1000
+                    metadata["total_duration"] = duration
+
+                # Extract chapters
+                if "content" in card_data and "chapters" in card_data["content"]:
+                    chapters_raw = card_data["content"]["chapters"]
+                    metadata["chapters_count"] = len(chapters_raw)
+
+                    # Extract relevant chapter info
+                    chapters = []
+                    for ch in chapters_raw:
+                        chapter_info = {
+                            "key": ch.get("key"),
+                            "title": ch.get("title"),
+                            "label": ch.get("overlayLabel"),
+                            "duration": ch.get("duration"),
+                            "icon": ch.get("display", {}).get("icon16x16") if ch.get("display") else None,
+                        }
+                        chapters.append(chapter_info)
+                    metadata["chapters"] = chapters
+
+            # Look for cover image (supports both formats)
             cover_paths = [n for n in namelist if n.endswith("cover/cover.png") or n.endswith("cover/cover.jpg")]
+            if not cover_paths:
+                # Fallback: look for cover.jpg or cover.png at root
+                cover_paths = [n for n in namelist if n in ("cover.jpg", "cover.png")]
+
             if cover_paths:
+                logger.info(f"Found cover at: {cover_paths[0]}")
                 with zf.open(cover_paths[0]) as f:
                     metadata["cover_data"] = f.read()
 
     except zipfile.BadZipFile:
+        logger.error(f"Invalid ZIP file: {archive_path}")
         pass
 
     return metadata
