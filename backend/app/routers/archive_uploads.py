@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Form, UploadFile, File, Depends, R
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models import UploadSession, Archive
+from app.models import UploadSession, Archive, Category, Age
 from app import services
 from app.config import get_settings
 from app.auth import require_permission
@@ -16,6 +16,48 @@ from app.auth import require_permission
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/archives/upload", tags=["archive-uploads"])
 settings = get_settings()
+
+
+async def get_or_create_categories(db: AsyncSession, names: list[str]) -> list[Category]:
+    """Get existing categories or create new ones by name."""
+    names = [n.strip() for n in names if n.strip()]
+    if not names:
+        return []
+
+    result = await db.execute(select(Category).where(Category.name.in_(names)))
+    existing = {c.name: c for c in result.scalars().all()}
+
+    categories = []
+    for name in names:
+        if name not in existing:
+            cat = Category(name=name, icon="fas fa-folder")
+            db.add(cat)
+            await db.flush()
+            await db.refresh(cat)
+            existing[name] = cat
+        categories.append(existing[name])
+    return categories
+
+
+async def get_or_create_ages(db: AsyncSession, names: list[str]) -> list[Age]:
+    """Get existing ages or create new ones by name."""
+    names = [n.strip() for n in names if n.strip()]
+    if not names:
+        return []
+
+    result = await db.execute(select(Age).where(Age.name.in_(names)))
+    existing = {a.name: a for a in result.scalars().all()}
+
+    ages = []
+    for name in names:
+        if name not in existing:
+            age = Age(name=name, icon="fas fa-child")
+            db.add(age)
+            await db.flush()
+            await db.refresh(age)
+            existing[name] = age
+        ages.append(existing[name])
+    return ages
 
 
 @router.post("/init")
@@ -143,9 +185,34 @@ async def complete_archive_upload(
         # Parse metadata from session
         archive_meta = json.loads(session.pseudonym) if session.pseudonym else {}
 
+        # Determine final title
+        final_title = archive_meta.get("title") or metadata.get("title")
+        if not final_title:
+            raise HTTPException(status_code=400, detail="Title is required.")
+
+        # Get or create categories
+        category_list = []
+        if archive_meta.get("categories"):
+            try:
+                category_names = json.loads(archive_meta["categories"]) if isinstance(archive_meta["categories"], str) else archive_meta["categories"]
+                if isinstance(category_names, list):
+                    category_list = await get_or_create_categories(db, category_names)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Get or create ages
+        age_list = []
+        if archive_meta.get("ages"):
+            try:
+                age_names = json.loads(archive_meta["ages"]) if isinstance(archive_meta["ages"], str) else archive_meta["ages"]
+                if isinstance(age_names, list):
+                    age_list = await get_or_create_ages(db, age_names)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         # Create Archive
         archive = Archive(
-            title=archive_meta.get("title") or metadata.get("title"),
+            title=final_title,
             author=archive_meta.get("author"),
             description=archive_meta.get("description"),
             archive_path=archive_filename,
@@ -153,6 +220,8 @@ async def complete_archive_upload(
             total_duration=metadata.get("total_duration"),
             chapters_count=metadata.get("chapters_count"),
             chapters_data=json.dumps(metadata.get("chapters")) if metadata.get("chapters") else None,
+            categories=category_list,
+            ages=age_list,
         )
 
         # Save cover if present
