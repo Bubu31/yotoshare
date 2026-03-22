@@ -57,6 +57,9 @@ async def create_submission(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
 
+    # Debug: log the received filename
+    logger.info(f"Submission received - filename: '{file.filename}', size: {file.size}, content_type: {file.content_type}")
+
     if parent_submission_id is not None:
         result = await db.execute(select(Submission).where(Submission.id == parent_submission_id))
         parent = result.scalar_one_or_none()
