@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import axios from 'axios'
+import { uploadFileChunked } from '../services/chunkedUpload'
 
 const route = useRoute()
 const parentSubmissionId = ref(route.query.rework ? parseInt(route.query.rework) : null)
@@ -79,10 +79,6 @@ function removeFile() {
 async function submit() {
   if (!file.value) return
 
-  const CHUNK_SIZE = 5 * 1024 * 1024  // 5 MB
-  const totalChunks = Math.ceil(file.value.size / CHUNK_SIZE)
-  let uploadId = null
-
   error.value = ''
   uploading.value = true
   uploadProgress.value = 0
@@ -90,49 +86,21 @@ async function submit() {
   totalBytes.value = file.value.size
   uploadStartTime.value = Date.now()
 
+  const metadata = {}
+  if (pseudonym.value.trim()) {
+    metadata.pseudonym = pseudonym.value.trim()
+  }
+  if (parentSubmissionId.value) {
+    metadata.parent_submission_id = parentSubmissionId.value
+  }
+
   try {
-    // 1. Initialize upload session
-    const initForm = new FormData()
-    initForm.append('filename', file.value.name)
-    initForm.append('total_size', file.value.size)
-    initForm.append('total_chunks', totalChunks)
-    initForm.append('chunk_size', CHUNK_SIZE)
-    if (pseudonym.value.trim()) initForm.append('pseudonym', pseudonym.value.trim())
-    if (parentSubmissionId.value) initForm.append('parent_submission_id', parentSubmissionId.value)
-
-    const initResponse = await axios.post('/api/uploads/init', initForm)
-    uploadId = initResponse.data.upload_id
-
-    // 2. Upload chunks sequentially
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE
-      const end = Math.min(start + CHUNK_SIZE, file.value.size)
-      const chunk = file.value.slice(start, end)
-
-      const chunkForm = new FormData()
-      chunkForm.append('chunk_index', i)
-      chunkForm.append('chunk', chunk, `chunk_${i}`)
-
-      await axios.post(`/api/uploads/${uploadId}/chunk`, chunkForm)
-
-      uploadedBytes.value = Math.min(end, file.value.size)
-      uploadProgress.value = Math.round((uploadedBytes.value / file.value.size) * 95)
-    }
-
-    // 3. Finalize upload
-    await axios.post(`/api/uploads/${uploadId}/complete`)
-    uploadProgress.value = 100
+    await uploadFileChunked(file.value, metadata, (progress) => {
+      uploadedBytes.value = progress.uploadedBytes
+      uploadProgress.value = progress.uploadProgress
+    })
     success.value = true
-
   } catch (e) {
-    // Cancel upload on error
-    if (uploadId) {
-      try {
-        await axios.delete(`/api/uploads/${uploadId}`)
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
     error.value = e.response?.data?.detail || "Erreur lors de l'envoi"
   } finally {
     uploading.value = false

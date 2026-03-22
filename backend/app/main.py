@@ -9,6 +9,7 @@ from sqlalchemy import select
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 from app.routers import (
     archives_router,
+    archive_uploads_router,
     categories_router,
     ages_router,
     download_router,
@@ -99,6 +100,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(archives_router)
+app.include_router(archive_uploads_router)
 app.include_router(categories_router)
 app.include_router(ages_router)
 app.include_router(download_router)

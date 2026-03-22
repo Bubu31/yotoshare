@@ -1,4 +1,5 @@
 from app.routers.archives import router as archives_router
+from app.routers.archive_uploads import router as archive_uploads_router
 from app.routers.categories import router as categories_router
 from app.routers.ages import router as ages_router
 from app.routers.download import router as download_router
@@ -14,6 +15,7 @@ from app.routers.uploads import router as uploads_router
 
 __all__ = [
     "archives_router",
+    "archive_uploads_router",
     "categories_router",
     "ages_router",
     "download_router",

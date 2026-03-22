@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useArchivesStore } from '../stores/archives'
+import { uploadFileChunked } from '../services/chunkedUpload'
 import TagInput from './TagInput.vue'
 
 const props = defineProps({
@@ -99,21 +100,22 @@ async function startUpload() {
     entry.status = 'uploading'
 
     try {
-      const formData = new FormData()
-      formData.append('archive_file', entry.file)
+      const metadata = {}
       if (selectedCategories.value.length > 0) {
-        formData.append('categories', JSON.stringify(selectedCategories.value))
+        metadata.categories = JSON.stringify(selectedCategories.value)
       }
       if (selectedAges.value.length > 0) {
-        formData.append('ages', JSON.stringify(selectedAges.value))
+        metadata.ages = JSON.stringify(selectedAges.value)
       }
-      await archivesStore.createArchive(formData, {
-        onUploadProgress(e) {
-          if (e.total) {
-            entry.progress = Math.round((e.loaded / e.total) * 100)
-          }
-        },
+
+      await uploadFileChunked(entry.file, metadata, (progress) => {
+        entry.progress = progress.uploadProgress
+      }, {
+        initEndpoint: '/api/archives/upload/init',
+        chunkEndpoint: '/api/archives/upload',
+        completeEndpoint: '/api/archives/upload',
       })
+
       entry.progress = 100
       entry.status = 'success'
     } catch (e) {
@@ -124,6 +126,7 @@ async function startUpload() {
 
   uploading.value = false
   done.value = true
+  archivesStore.fetchArchives()
 }
 
 function handleClose() {
