@@ -120,9 +120,11 @@ def extract_archive_metadata(archive_path: str) -> dict:
     try:
         with zipfile.ZipFile(archive_path, "r") as zf:
             namelist = zf.namelist()
+            logger.info(f"ZIP contents ({len(namelist)} files): {namelist[:20]}")  # Log first 20 files
 
             # Look for card-data.json
             card_data_paths = [n for n in namelist if n.endswith("data/card-data.json")]
+            logger.info(f"Found card-data.json at: {card_data_paths}")
             if card_data_paths:
                 with zf.open(card_data_paths[0]) as f:
                     try:

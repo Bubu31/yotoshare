@@ -178,15 +178,21 @@ async def complete_archive_upload(
         )
 
         archive_path = os.path.join(settings.archives_path, archive_filename)
+        logger.info(f"Extracted archive to {archive_path}, size: {file_size}")
+
         metadata = await asyncio.to_thread(
             services.storage.extract_archive_metadata, archive_path
         )
+        logger.info(f"Archive metadata: title={metadata.get('title')}, chapters={metadata.get('chapters_count')}, cover={bool(metadata.get('cover_data'))}, duration={metadata.get('total_duration')}")
 
         # Parse metadata from session
         archive_meta = json.loads(session.pseudonym) if session.pseudonym else {}
 
         # Determine final title
-        final_title = archive_meta.get("title") or metadata.get("title")
+        form_title = archive_meta.get("title")
+        extracted_title = metadata.get("title")
+        final_title = form_title or extracted_title
+        logger.info(f"Title resolution: form_title={form_title!r}, extracted_title={extracted_title!r}, final_title={final_title!r}")
         if not final_title:
             raise HTTPException(status_code=400, detail="Title is required.")
 
