@@ -60,6 +60,13 @@ async def create_submission(
     # Debug: log the received filename
     logger.info(f"Submission received - filename: '{file.filename}', size: {file.size}, content_type: {file.content_type}")
 
+    # Temporary: accept any ZIP file (even if filename doesn't end with .zip due to parsing issues)
+    if file.content_type not in ("application/zip", "application/x-zip-compressed") and (not file.filename or not file.filename.lower().endswith(".zip")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seuls les fichiers .zip sont acceptés.",
+        )
+
     if parent_submission_id is not None:
         result = await db.execute(select(Submission).where(Submission.id == parent_submission_id))
         parent = result.scalar_one_or_none()
@@ -69,11 +76,6 @@ async def create_submission(
                 detail="Soumission parente introuvable ou non en statut rework.",
             )
 
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Seuls les fichiers .zip sont acceptés.",
-        )
 
     filename, file_size = await storage.save_archive(file)
 
