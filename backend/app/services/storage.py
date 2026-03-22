@@ -5,6 +5,7 @@ import json
 import zipfile
 import tempfile
 import aiofiles
+import shutil
 from pathlib import Path
 from typing import Optional
 from PIL import Image
@@ -15,6 +16,8 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def ensure_directories():
@@ -464,3 +467,46 @@ async def save_cover_from_bytes(image_data: bytes, max_size: tuple[int, int] = (
         return filename
     except Exception:
         return None
+
+
+def get_upload_chunks_dir(upload_id: str) -> str:
+    """Get the directory path for storing chunks of an upload."""
+    return os.path.join(settings.archives_path, "upload-chunks", upload_id)
+
+
+def save_chunk(upload_id: str, chunk_index: int, data: bytes) -> None:
+    """Save a single chunk to disk."""
+    chunk_dir = get_upload_chunks_dir(upload_id)
+    os.makedirs(chunk_dir, exist_ok=True)
+    chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_index:06d}")
+    with open(chunk_path, "wb") as f:
+        f.write(data)
+
+
+def assemble_chunks(upload_id: str, total_chunks: int) -> tuple[str, int]:
+    """Assemble all chunks into a single ZIP file.
+
+    Returns: (filename, file_size)
+    """
+    chunk_dir = get_upload_chunks_dir(upload_id)
+    final_filename = f"{uuid.uuid4()}.zip"
+    final_path = os.path.join(settings.archives_path, final_filename)
+    os.makedirs(settings.archives_path, exist_ok=True)
+
+    file_size = 0
+    with open(final_path, "wb") as out:
+        for i in range(total_chunks):
+            chunk_path = os.path.join(chunk_dir, f"chunk_{i:06d}")
+            with open(chunk_path, "rb") as chunk_f:
+                data = chunk_f.read()
+                out.write(data)
+                file_size += len(data)
+
+    return final_filename, file_size
+
+
+def cleanup_chunks(upload_id: str) -> None:
+    """Clean up all chunks for an upload session."""
+    chunk_dir = get_upload_chunks_dir(upload_id)
+    if os.path.exists(chunk_dir):
+        shutil.rmtree(chunk_dir)

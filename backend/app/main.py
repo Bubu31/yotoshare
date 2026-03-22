@@ -1,8 +1,10 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 from app.routers import (
@@ -18,15 +20,19 @@ from app.routers import (
     packs_router,
     submissions_router,
     service_router,
+    uploads_router,
 )
 from app.config import get_settings
 from app.services import storage
+from app.models import UploadSession
+from app.database import AsyncSessionLocal
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 GC_INTERVAL_SECONDS = 600       # run GC every 10 minutes
 ARCHIVE_CACHE_TTL_SECONDS = 1800  # 30 minutes idle → evict
+UPLOAD_CLEANUP_INTERVAL_SECONDS = 1800  # every 30 minutes
 
 
 @asynccontextmanager
@@ -41,11 +47,37 @@ async def lifespan(app: FastAPI):
             except Exception as exc:
                 logger.warning("Archive cache GC error: %s", exc)
 
-    task = asyncio.create_task(_gc_loop())
+    async def _upload_cleanup_loop():
+        while True:
+            await asyncio.sleep(UPLOAD_CLEANUP_INTERVAL_SECONDS)
+            try:
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(UploadSession).where(
+                            UploadSession.expires_at < datetime.now(timezone.utc)
+                        )
+                    )
+                    expired_sessions = result.scalars().all()
+                    for session in expired_sessions:
+                        await asyncio.to_thread(storage.cleanup_chunks, session.upload_id)
+                        await db.delete(session)
+                    if expired_sessions:
+                        await db.commit()
+                        logger.info("Upload cleanup: removed %d expired session(s)", len(expired_sessions))
+            except Exception as exc:
+                logger.warning("Upload cleanup error: %s", exc)
+
+    gc_task = asyncio.create_task(_gc_loop())
+    upload_cleanup_task = asyncio.create_task(_upload_cleanup_loop())
     yield
-    task.cancel()
+    gc_task.cancel()
+    upload_cleanup_task.cancel()
     try:
-        await task
+        await gc_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await upload_cleanup_task
     except asyncio.CancelledError:
         pass
 
@@ -77,6 +109,7 @@ app.include_router(roles_router)
 app.include_router(packs_router)
 app.include_router(submissions_router)
 app.include_router(service_router)
+app.include_router(uploads_router)
 
 
 @app.get("/api/health")

@@ -161,3 +161,18 @@ class DownloadToken(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     archive = relationship("Archive", back_populates="download_tokens")
+
+
+class UploadSession(Base):
+    __tablename__ = "upload_sessions"
+
+    upload_id = Column(String(36), primary_key=True, index=True)  # UUID4
+    filename = Column(String(500), nullable=False)
+    total_size = Column(Integer, nullable=False)
+    total_chunks = Column(Integer, nullable=False)
+    chunk_size = Column(Integer, nullable=False)
+    pseudonym = Column(String(255), nullable=True)
+    parent_submission_id = Column(Integer, nullable=True)
+    submitter_ip = Column(String(45), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

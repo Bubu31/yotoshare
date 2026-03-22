@@ -57,11 +57,7 @@ async def create_submission(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
 
-    # Debug: log the received filename
-    logger.info(f"Submission received - filename: '{file.filename}', size: {file.size}, content_type: {file.content_type}")
-
-    # Temporary: accept any ZIP file (even if filename doesn't end with .zip due to parsing issues)
-    if file.content_type not in ("application/zip", "application/x-zip-compressed") and (not file.filename or not file.filename.lower().endswith(".zip")):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Seuls les fichiers .zip sont acceptés.",

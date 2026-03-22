@@ -10,6 +10,7 @@ from app.routers.roles import router as roles_router
 from app.routers.packs import router as packs_router
 from app.routers.submissions import router as submissions_router
 from app.routers.service import router as service_router
+from app.routers.uploads import router as uploads_router
 
 __all__ = [
     "archives_router",
@@ -24,4 +25,5 @@ __all__ = [
     "packs_router",
     "submissions_router",
     "service_router",
+    "uploads_router",
 ]
